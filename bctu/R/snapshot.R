@@ -12,9 +12,9 @@
 # <store>/SNAPSHOTS.log.yml. Nothing is committed to git and nothing is made
 # read-only, so ordinary git and delete operations never fight the filesystem.
 
-.MANIFEST     <- "manifest.yml"
-.LEDGER       <- "SNAPSHOTS.log.yml"
-.SCHEMA       <- "bctu-snapshot/1"
+manifest_filename     <- "manifest.yml"
+ledger_filename       <- "SNAPSHOTS.log.yml"
+snapshot_schema       <- "bctu-snapshot/1"
 
 # --- in-memory snapshot object ---------------------------------------------
 #' @keywords internal
@@ -70,7 +70,7 @@ save_snapshot <- function(x, store = snapshot_store(), formats = c("rds", "csv")
   if (!inherits(x, "bctu_snapshot")) cli::cli_abort("{.arg x} must be a {.cls bctu_snapshot}.")
   meta <- attr(x, "bctu_meta")
   # collision-safe id: bump the whole second until the directory is free
-  now <- .utc_now(); id <- snapshot_id(now); dir <- file.path(store, id)
+  now <- utc_now(); id <- snapshot_id(now); dir <- file.path(store, id)
   while (dir.exists(dir)) { now <- now + 1L; id <- snapshot_id(now); dir <- file.path(store, id) }
   dir.create(file.path(dir, "tables"), recursive = TRUE, showWarnings = FALSE)
 
@@ -81,23 +81,23 @@ save_snapshot <- function(x, store = snapshot_store(), formats = c("rds", "csv")
     files <- list()
     if ("rds" %in% formats) {
       p <- file.path(tdir, paste0(nm, ".rds")); saveRDS(x[[nm]], p)
-      files$rds <- .file_entry(p, dir)
+      files$rds <- file_entry(p, dir)
     }
     if ("csv" %in% formats) {
       p <- file.path(tdir, paste0(nm, ".csv")); utils::write.csv(x[[nm]], p, row.names = FALSE, na = "")
-      files$csv <- .file_entry(p, dir)
+      files$csv <- file_entry(p, dir)
     }
     tbl_meta[[nm]] <- list(n_rows = nrow(x[[nm]]), n_cols = ncol(x[[nm]]), files = files)
   }
 
   manifest <- list(
-    schema = .SCHEMA, id = id, name = meta$name,
+    schema = snapshot_schema, id = id, name = meta$name,
     created_utc = iso8601(now), fetched_utc = meta$fetched_utc,
     source = meta$source, checkpoint = meta$checkpoint, tables = tbl_meta
   )
-  yaml::write_yaml(manifest, file.path(dir, .MANIFEST))
+  yaml::write_yaml(manifest, file.path(dir, manifest_filename))
 
-  .ledger_append(store, list(
+  ledger_append(store, list(
     event = "extract", id = id, name = meta$name, at = iso8601(now),
     source_type = meta$source$type,
     tables = lapply(tbl_meta, function(t) list(n_rows = t$n_rows,
@@ -111,13 +111,13 @@ save_snapshot <- function(x, store = snapshot_store(), formats = c("rds", "csv")
 }
 
 #' @keywords internal
-.file_entry <- function(path, base) {
-  list(path = .rel(path, base),
+file_entry <- function(path, base) {
+  list(path = relative_to(path, base),
        size_bytes = as.integer(file.info(path)$size),
-       sha256 = .sha256_file(path))
+       sha256 = sha256_file(path))
 }
 #' @keywords internal
-.rel <- function(path, base) sub(paste0("^", regex_escape(normalizePath(base, winslash = "/")), "/?"),
+relative_to <- function(path, base) sub(paste0("^", regex_escape(normalizePath(base, winslash = "/")), "/?"),
                                  "", normalizePath(path, winslash = "/"))
 #' @keywords internal
 regex_escape <- function(x) gsub("([.\\\\+*?\\[^\\]$(){}=!<>|:#-])", "\\\\\\1", x, perl = TRUE)
@@ -128,17 +128,17 @@ regex_escape <- function(x) gsub("([.\\\\+*?\\[^\\]$(){}=!<>|:#-])", "\\\\\\1", 
 #' @export
 list_snapshots <- function(store = snapshot_store(verbose = 0L)) {
   d <- list.dirs(store, recursive = FALSE, full.names = FALSE)
-  sort(d[grepl(.SNAPSHOT_ID_RE, d)])
+  sort(d[grepl(snapshot_id_regex, d)])
 }
 
 #' @keywords internal
-.resolve_which <- function(which, store) {
+resolve_snapshot_which <- function(which, store) {
   ids <- list_snapshots(store)
   if (length(ids) == 0L) cli::cli_abort("No snapshots in {.file {store}}.")
   pick <- if (identical(which, "latest")) utils::tail(ids, 1L)
     else if (identical(which, "penultimate")) { if (length(ids) < 2L) cli::cli_abort("No penultimate snapshot.") ; utils::tail(ids, 2L)[1L] }
     else if (is.numeric(which)) utils::tail(ids, which)[1L]
-    else if (.is_string(which) && grepl(.SNAPSHOT_ID_RE, which)) { if (!which %in% ids) cli::cli_abort("Snapshot {.val {which}} not found."); which }
+    else if (is_string(which) && grepl(snapshot_id_regex, which)) { if (!which %in% ids) cli::cli_abort("Snapshot {.val {which}} not found."); which }
     else cli::cli_abort("Unrecognised {.arg which}: {.val {which}}.")
   pick
 }
@@ -153,9 +153,9 @@ list_snapshots <- function(store = snapshot_store(verbose = 0L)) {
 #' @export
 load_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0L),
                           table = NULL, verbose = 2L) {
-  id <- .resolve_which(which, store)
+  id <- resolve_snapshot_which(which, store)
   dir <- file.path(store, id)
-  man <- yaml::read_yaml(file.path(dir, .MANIFEST))
+  man <- yaml::read_yaml(file.path(dir, manifest_filename))
   read_one <- function(nm) {
     f <- man$tables[[nm]]$files
     if (!is.null(f$rds)) readRDS(file.path(dir, f$rds$path))
@@ -179,13 +179,13 @@ load_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0L)
 #' @return A list with `ok` (logical) and a per-file `details` data frame.
 #' @export
 verify_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0L)) {
-  id <- .resolve_which(which, store); dir <- file.path(store, id)
-  man <- yaml::read_yaml(file.path(dir, .MANIFEST))
+  id <- resolve_snapshot_which(which, store); dir <- file.path(store, id)
+  man <- yaml::read_yaml(file.path(dir, manifest_filename))
   rows <- list()
   for (nm in names(man$tables)) for (fmt in names(man$tables[[nm]]$files)) {
     e <- man$tables[[nm]]$files[[fmt]]; p <- file.path(dir, e$path)
     exists <- file.exists(p)
-    sha_ok <- exists && identical(.sha256_file(p), e$sha256)
+    sha_ok <- exists && identical(sha256_file(p), e$sha256)
     rows[[length(rows) + 1L]] <- data.frame(table = nm, format = fmt,
       exists = exists, sha256_ok = sha_ok, stringsAsFactors = FALSE)
   }
@@ -205,9 +205,9 @@ verify_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0
 delete_snapshot <- function(which, reason, store = snapshot_store(verbose = 0L),
                             mode = c("destroy", "retire"), verbose = 2L) {
   mode <- match.arg(mode)
-  if (!.is_string(reason) || !nzchar(reason))
+  if (!is_string(reason) || !nzchar(reason))
     cli::cli_abort("{.arg reason} is required (recorded in the audit trail).")
-  id <- .resolve_which(which, store); dir <- file.path(store, id)
+  id <- resolve_snapshot_which(which, store); dir <- file.path(store, id)
   Sys.chmod(list.files(dir, recursive = TRUE, full.names = TRUE, include.dirs = TRUE), "0777")
   Sys.chmod(dir, "0777")
   if (mode == "retire") {
@@ -216,7 +216,7 @@ delete_snapshot <- function(which, reason, store = snapshot_store(verbose = 0L),
   } else {
     unlink(dir, recursive = TRUE, force = TRUE)
   }
-  .ledger_append(store, list(event = "delete", id = id, at = iso8601(),
+  ledger_append(store, list(event = "delete", id = id, at = iso8601(),
                              mode = mode, reason = reason,
                              user = unname(Sys.info()[["user"]])))
   if (verbose >= 1L) cli::cli_alert_success("snapshot {.val {id}} {mode}d (recorded in ledger).")
@@ -225,8 +225,8 @@ delete_snapshot <- function(which, reason, store = snapshot_store(verbose = 0L),
 
 # --- append-only audit ledger (human-readable YAML documents) --------------
 #' @keywords internal
-.ledger_append <- function(store, record) {
-  path <- file.path(store, .LEDGER)
+ledger_append <- function(store, record) {
+  path <- file.path(store, ledger_filename)
   cat("---\n", yaml::as.yaml(record), sep = "", file = path, append = TRUE)
   invisible(path)
 }
@@ -235,7 +235,7 @@ delete_snapshot <- function(which, reason, store = snapshot_store(verbose = 0L),
 #' @return A list of ledger records, oldest first.
 #' @export
 read_ledger <- function(store = snapshot_store(verbose = 0L)) {
-  path <- file.path(store, .LEDGER)
+  path <- file.path(store, ledger_filename)
   if (!file.exists(path)) return(list())
   txt <- paste(readLines(path), collapse = "\n")
   docs <- strsplit(txt, "(^|\n)---\\s*\n")[[1]]

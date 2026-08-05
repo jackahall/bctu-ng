@@ -7,7 +7,7 @@
 # cannot be found, resolution errors loudly. Every resolved path is announced,
 # so a snapshot can never be written somewhere unnoticed.
 
-.PROJECT_FILE <- "bctu-project.yml"
+project_marker_name <- "bctu-project.yml"
 
 #' Initialise a bctu project
 #'
@@ -25,9 +25,9 @@ bctu_init_project <- function(name,
                               snapshot_store = "Data/Snapshots",
                               dir = getwd(),
                               overwrite = FALSE) {
-  if (!.is_string(name)) cli::cli_abort("{.arg name} must be a single string.")
+  if (!is_string(name)) cli::cli_abort("{.arg name} must be a single string.")
   dir <- normalizePath(dir, mustWork = TRUE)
-  file <- file.path(dir, .PROJECT_FILE)
+  file <- file.path(dir, project_marker_name)
   if (file.exists(file) && !overwrite)
     cli::cli_abort(c("A bctu project already exists here: {.file {file}}",
                      "i" = "Pass {.code overwrite = TRUE} to replace it."))
@@ -41,10 +41,10 @@ bctu_init_project <- function(name,
 
 #' Locate the nearest project marker by walking up from `start`
 #' @keywords internal
-.find_project_file <- function(start = getwd()) {
+find_project_marker <- function(start = getwd()) {
   dir <- normalizePath(start, mustWork = TRUE)
   repeat {
-    cand <- file.path(dir, .PROJECT_FILE)
+    cand <- file.path(dir, project_marker_name)
     if (file.exists(cand)) return(cand)
     parent <- dirname(dir)
     if (identical(parent, dir)) return(NA_character_)   # reached filesystem root
@@ -59,10 +59,10 @@ bctu_init_project <- function(name,
 #'   directory), and the raw declared fields.
 #' @export
 bctu_project <- function(start = getwd()) {
-  file <- .find_project_file(start)
+  file <- find_project_marker(start)
   if (is.na(file))
     cli::cli_abort(c(
-      "No {.file {.PROJECT_FILE}} found at or above {.file {normalizePath(start)}}.",
+      "No {.file {project_marker_name}} found at or above {.file {normalizePath(start)}}.",
       "i" = "Run {.code bctu_init_project(<name>)} at the trial root first.",
       "x" = "bctu refuses to guess a location — nothing was read or written."
     ))
@@ -89,8 +89,8 @@ bctu_project <- function(start = getwd()) {
 snapshot_store <- function(start = getwd(), verbose = 1L) {
   p <- bctu_project(start)
   store <- p$snapshot_store
-  store <- if (.is_absolute(store)) store else file.path(p$root, store)
-  store <- .normalize_lenient(store)
+  store <- if (is_absolute_path(store)) store else file.path(p$root, store)
+  store <- normalize_path_lenient(store)
   if (!dir.exists(store)) dir.create(store, recursive = TRUE, showWarnings = FALSE)
   if (verbose >= 1L)
     cli::cli_alert_info("snapshot store: {.file {store}}  (from {.file {p$file}})")
@@ -113,11 +113,11 @@ bctu_config <- function(start = getwd()) {
 
 # --- path helpers (no external deps) ---------------------------------------
 #' @keywords internal
-.is_absolute <- function(path) {
+is_absolute_path <- function(path) {
   grepl("^(/|~|[A-Za-z]:[/\\\\])", path)
 }
 #' @keywords internal
-.normalize_lenient <- function(path) {
+normalize_path_lenient <- function(path) {
   # normalizePath but tolerate a not-yet-existing leaf
   normalizePath(path, winslash = "/", mustWork = FALSE)
 }

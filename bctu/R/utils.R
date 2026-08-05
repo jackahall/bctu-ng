@@ -14,15 +14,15 @@
 #   manifest time: full extended ISO 8601 "YYYY-MM-DDTHH:MM:SSZ" (human-readable,
 #                  stored as text in the YAML manifest alongside the id).
 
-.utc_now <- function() as.POSIXct(Sys.time(), tz = "UTC")
+utc_now <- function() as.POSIXct(Sys.time(), tz = "UTC")
 
-.SNAPSHOT_ID_RE <- "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z$"
+snapshot_id_regex <- "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z$"
 
 #' Canonical snapshot identifier from a time
 #' @param time A `POSIXct` (or anything coercible); interpreted/rendered in UTC.
 #' @return A length-1 character id `"YYYY-MM-DDTHHMMSSZ"`.
 #' @export
-snapshot_id <- function(time = .utc_now()) {
+snapshot_id <- function(time = utc_now()) {
   time <- as.POSIXct(time, tz = "UTC")
   if (length(time) != 1L || is.na(time))
     cli::cli_abort("{.arg time} must be a single non-missing time.")
@@ -34,7 +34,7 @@ snapshot_id <- function(time = .utc_now()) {
 #' @return A length-1 UTC `POSIXct`.
 #' @export
 parse_snapshot_id <- function(id) {
-  if (!is.character(id) || length(id) != 1L || !grepl(.SNAPSHOT_ID_RE, id))
+  if (!is.character(id) || length(id) != 1L || !grepl(snapshot_id_regex, id))
     cli::cli_abort(c("Invalid snapshot id: {.val {id}}",
                      "i" = "Expected {.code YYYY-MM-DDTHHMMSSZ} (UTC)."))
   t <- as.POSIXct(strptime(id, "%Y-%m-%dT%H%M%SZ", tz = "UTC"), tz = "UTC")
@@ -46,7 +46,7 @@ parse_snapshot_id <- function(id) {
 #' @param time A time; rendered in `tz`.
 #' @param tz Timezone; default UTC.
 #' @export
-iso8601 <- function(time = .utc_now(), tz = "UTC") {
+iso8601 <- function(time = utc_now(), tz = "UTC") {
   format(as.POSIXct(time, tz = tz), "%Y-%m-%dT%H:%M:%SZ", tz = tz)
 }
 
@@ -69,7 +69,7 @@ snapshot_date <- function(x, tz = "Europe/London") {
 # ---------------------------------------------------------------------------
 #' SHA-256 of a file's bytes
 #' @keywords internal
-.sha256_file <- function(path) {
+sha256_file <- function(path) {
   as.character(digest::digest(file = path, algo = "sha256"))
 }
 
@@ -77,4 +77,4 @@ snapshot_date <- function(x, tz = "Europe/London") {
 # Small helpers
 # ---------------------------------------------------------------------------
 #' @keywords internal
-.is_string <- function(x) is.character(x) && length(x) == 1L && !is.na(x)
+is_string <- function(x) is.character(x) && length(x) == 1L && !is.na(x)

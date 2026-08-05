@@ -20,7 +20,7 @@
 #' @export
 new_datasource <- function(type, fetch, creds = NULL, config = list(),
                            test = NULL, label = type) {
-  if (!.is_string(type)) cli::cli_abort("{.arg type} must be a single string.")
+  if (!is_string(type)) cli::cli_abort("{.arg type} must be a single string.")
   if (!is.function(fetch)) cli::cli_abort("{.arg fetch} must be a function.")
   if (!is.null(creds) && !inherits(creds, "credential_spec"))
     cli::cli_abort("{.arg creds} must be a {.cls credential_spec} or NULL.")
@@ -55,7 +55,7 @@ print.datasource <- function(x, ...) {
 #' @export
 credential_spec <- function(id, service = "bctu_api_token", env = NULL,
                             expect_nchar = NULL, required = TRUE) {
-  if (!.is_string(id)) cli::cli_abort("{.arg id} must be a single string.")
+  if (!is_string(id)) cli::cli_abort("{.arg id} must be a single string.")
   env <- env %||% paste0("BCTU_API_TOKEN_", toupper(gsub("[^A-Za-z0-9]+", "_", id)))
   structure(list(id = id, service = service, env = env,
                  expect_nchar = expect_nchar, required = required),
@@ -115,13 +115,13 @@ fetch_snapshot <- function(x, ...) UseMethod("fetch_snapshot")
 fetch_snapshot.datasource <- function(x, verbose = 2L, ...) {
   creds  <- resolve_credentials(x$creds, verbose = verbose)
   tables <- x$fetch(creds = creds, config = x$config, verbose = verbose, ...)
-  tables <- .validate_tables(tables)
-  as_snapshot(tables, source = .redact_source(x),
+  tables <- validate_tables(tables)
+  as_snapshot(tables, source = redact_source(x),
               name = x$config$name %||% x$label)
 }
 
 #' @keywords internal
-.validate_tables <- function(tables) {
+validate_tables <- function(tables) {
   if (is.data.frame(tables)) tables <- list(records = tables)
   if (!is.list(tables) || is.null(names(tables)) || any(!nzchar(names(tables))))
     cli::cli_abort("A source's fetch() must return a NAMED list of data frames (one per table).")
@@ -132,7 +132,7 @@ fetch_snapshot.datasource <- function(x, verbose = 2L, ...) {
 }
 
 #' @keywords internal
-.redact_source <- function(x) {
+redact_source <- function(x) {
   list(type = x$type, label = x$label,
        config = x$config[!vapply(x$config, is.function, logical(1))],
        credential = if (is.null(x$creds)) NULL else
