@@ -21,6 +21,7 @@ Suggests:
     keyring,
     readr,
     haven,
+    openxlsx,
     withr
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)
