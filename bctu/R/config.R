@@ -64,7 +64,7 @@ bctu_project <- function(start = getwd()) {
     cli::cli_abort(c(
       "No {.file {project_marker_name}} found at or above {.file {normalizePath(start)}}.",
       "i" = "Run {.code bctu_init_project(<name>)} at the trial root first.",
-      "x" = "bctu refuses to guess a location — nothing was read or written."
+      "x" = "bctu refuses to guess a location: nothing was read or written."
     ))
   cfg <- yaml::read_yaml(file)
   if (is.null(cfg$bctu_project))

@@ -108,9 +108,23 @@ has_credential <- function(spec) {
 # ---------------------------------------------------------------------------
 # fetch_snapshot: source -> named list of tables -> snapshot
 # ---------------------------------------------------------------------------
+#' Fetch a snapshot from a data source
+#'
+#' Pulls every table declared by a data source, validates the returned tables,
+#' and assembles them into an in-memory snapshot with a redacted record of the
+#' source for the audit trail.
+#'
+#' @param x A `datasource` object (for example from [datasource_redcap()],
+#'   [datasource_sql()], or [datasource_example()]).
+#' @param verbose Integer verbosity level: `0` silent, `1` brief, `2` detailed.
+#' @param ... Passed on to the source's fetch function.
+#'
+#' @return A `bctu_snapshot` object: a named list of data frames carrying the
+#'   snapshot id, data-cut date, and redacted source as attributes.
 #' @export
 fetch_snapshot <- function(x, ...) UseMethod("fetch_snapshot")
 
+#' @rdname fetch_snapshot
 #' @export
 fetch_snapshot.datasource <- function(x, verbose = 2L, ...) {
   creds  <- resolve_credentials(x$creds, verbose = verbose)
