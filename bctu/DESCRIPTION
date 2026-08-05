@@ -1,0 +1,27 @@
+Package: bctu
+Title: BCTU Clinical-Trial Data Management (Rebuild)
+Version: 1.0.0.9000
+Authors@R: person("Jack", "Hall", email = "j.a.hall.1@bham.ac.uk", role = c("aut", "cre"))
+Description: Regulated clinical-trial data management for the Birmingham Clinical
+    Trials Unit: explicit project configuration, uniform data sources, immutable
+    multi-table snapshots with a human-readable audit trail, data-validation and
+    critical-data checks, and monitoring reports. MHRA/EMA/FDA/GCP oriented.
+License: file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.1.0)
+Imports:
+    cli,
+    digest,
+    yaml
+Suggests:
+    testthat (>= 3.0.0),
+    DBI,
+    odbc,
+    httr2,
+    keyring,
+    readr,
+    haven,
+    withr
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
