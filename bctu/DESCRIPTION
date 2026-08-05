@@ -17,6 +17,7 @@ Suggests:
     testthat (>= 3.0.0),
     DBI,
     odbc,
+    RSQLite,
     httr2,
     keyring,
     readr,
