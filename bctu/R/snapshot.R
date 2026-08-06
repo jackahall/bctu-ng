@@ -4,16 +4,19 @@
 # A snapshot is an immutable, timestamped capture of one or more named tables.
 # On disk:
 #   <store>/<id>/
-#     manifest.yml                     human-readable + machine-readable (GCP)
-#     tables/<table>/<table>.rds       typed canonical payload
-#     tables/<table>/<table>.csv       readable exchange copy
-# Integrity is SHA-256 recorded in the manifest (the authoritative control).
-# Every extraction and deletion is appended to an append-only audit ledger at
-# <store>/SNAPSHOTS.log.yml. Nothing is committed to git and nothing is made
-# read-only, so ordinary git and delete operations never fight the filesystem.
+#     manifest.yml                                    human-readable + machine-readable (GCP)
+#     tables/<table>/<study>_<table>_<id>.rds         typed canonical payload
+#     tables/<table>/<study>_<table>_<id>.csv         readable exchange copy
+# Payload files are self-identifying: the study name, table name, and snapshot id
+# are in the filename, so a file stays recognisable if it is moved out of the
+# store. Integrity is SHA-256 recorded in the manifest (the authoritative
+# control). The per-snapshot manifest is itself the immutable, timestamped audit
+# record of the extraction; a snapshot retired with delete_snapshot() keeps its
+# manifest as the deletion record. Nothing is committed to git and nothing is
+# made read-only, so ordinary git and delete operations never fight the
+# filesystem.
 
 manifest_filename     <- "manifest.yml"
-ledger_filename       <- "SNAPSHOTS.log.yml"
 snapshot_schema       <- "bctu-snapshot/1"
 
 # --- in-memory snapshot object ---------------------------------------------
@@ -52,7 +55,7 @@ checkpoint <- function() {
 #' @param verbose Verbosity.
 #' @return The saved snapshot, with its `id` attached, invisibly.
 #' @export
-take_snapshot <- function(source, store = snapshot_store(), formats = c("rds", "csv"),
+take_snapshot <- function(source, store = snapshot_location(), formats = c("rds", "csv"),
                           verbose = 2L) {
   snap <- fetch_snapshot(source, verbose = verbose)
   save_snapshot(snap, store = store, formats = formats, verbose = verbose)
@@ -65,10 +68,11 @@ take_snapshot <- function(source, store = snapshot_store(), formats = c("rds", "
 #' @param verbose Verbosity.
 #' @return `x` with `id` attached, invisibly.
 #' @export
-save_snapshot <- function(x, store = snapshot_store(), formats = c("rds", "csv"),
+save_snapshot <- function(x, store = snapshot_location(), formats = c("rds", "csv"),
                           verbose = 2L) {
   if (!inherits(x, "bctu_snapshot")) cli::cli_abort("{.arg x} must be a {.cls bctu_snapshot}.")
   meta <- attr(x, "bctu_meta")
+  study <- sanitise_study_name(meta$name)
   # collision-safe id: bump the whole second until the directory is free
   now <- utc_now(); id <- snapshot_id(now); dir <- file.path(store, id)
   while (dir.exists(dir)) { now <- now + 1L; id <- snapshot_id(now); dir <- file.path(store, id) }
@@ -78,13 +82,15 @@ save_snapshot <- function(x, store = snapshot_store(), formats = c("rds", "csv")
   for (nm in names(x)) {
     tdir <- file.path(dir, "tables", nm)
     dir.create(tdir, showWarnings = FALSE)
+    # payload files are self-identifying: <study>_<table>_<id>.<ext>
+    stem <- paste(study, nm, id, sep = "_")
     files <- list()
     if ("rds" %in% formats) {
-      p <- file.path(tdir, paste0(nm, ".rds")); saveRDS(x[[nm]], p)
+      p <- file.path(tdir, paste0(stem, ".rds")); saveRDS(x[[nm]], p)
       files$rds <- file_entry(p, dir)
     }
     if ("csv" %in% formats) {
-      p <- file.path(tdir, paste0(nm, ".csv")); utils::write.csv(x[[nm]], p, row.names = FALSE, na = "")
+      p <- file.path(tdir, paste0(stem, ".csv")); utils::write.csv(x[[nm]], p, row.names = FALSE, na = "")
       files$csv <- file_entry(p, dir)
     }
     tbl_meta[[nm]] <- list(n_rows = nrow(x[[nm]]), n_cols = ncol(x[[nm]]), files = files)
@@ -96,14 +102,6 @@ save_snapshot <- function(x, store = snapshot_store(), formats = c("rds", "csv")
     source = meta$source, checkpoint = meta$checkpoint, tables = tbl_meta
   )
   yaml::write_yaml(manifest, file.path(dir, manifest_filename))
-
-  ledger_append(store, list(
-    event = "extract", id = id, name = meta$name, at = iso8601(now),
-    source_type = meta$source$type,
-    tables = lapply(tbl_meta, function(t) list(n_rows = t$n_rows,
-                                               sha256 = t$files[[1]]$sha256)),
-    user = meta$checkpoint$user
-  ))
 
   attr(x, "id") <- id; attr(x, "dir") <- dir
   if (verbose >= 1L) cli::cli_alert_success("snapshot {.val {id}} saved -> {.file {dir}}")
@@ -122,11 +120,24 @@ relative_to <- function(path, base) sub(paste0("^", regex_escape(normalizePath(b
 #' @keywords internal
 regex_escape <- function(x) gsub("([.\\\\+*?\\[^\\]$(){}=!<>|:#-])", "\\\\\\1", x, perl = TRUE)
 
+#' Turn a study name into a filesystem-safe token for payload filenames
+#'
+#' Replaces any run of non-alphanumeric characters with a single underscore and
+#' trims leading/trailing underscores. Falls back to `"snapshot"` when nothing
+#' usable remains.
+#' @keywords internal
+sanitise_study_name <- function(name) {
+  token <- if (is_string(name)) name else "snapshot"
+  token <- gsub("[^A-Za-z0-9]+", "_", token)
+  token <- gsub("^_+|_+$", "", token)
+  if (!nzchar(token)) "snapshot" else token
+}
+
 # --- resolve / list ---------------------------------------------------------
 #' List snapshot ids in a store (newest last)
 #' @param store Snapshot store directory.
 #' @export
-list_snapshots <- function(store = snapshot_store(verbose = 0L)) {
+list_snapshots <- function(store = snapshot_location(verbose = 0L)) {
   d <- list.dirs(store, recursive = FALSE, full.names = FALSE)
   sort(d[grepl(snapshot_id_regex, d)])
 }
@@ -151,7 +162,7 @@ resolve_snapshot_which <- function(which, store) {
 #' @param verbose Verbosity.
 #' @return A `bctu_snapshot` (or a single data frame if `table` is given).
 #' @export
-load_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0L),
+load_snapshot <- function(which = "latest", store = snapshot_location(verbose = 0L),
                           table = NULL, verbose = 2L) {
   id <- resolve_snapshot_which(which, store)
   dir <- file.path(store, id)
@@ -178,7 +189,7 @@ load_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0L)
 #' @param store Snapshot store directory.
 #' @return A list with `ok` (logical) and a per-file `details` data frame.
 #' @export
-verify_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0L)) {
+verify_snapshot <- function(which = "latest", store = snapshot_location(verbose = 0L)) {
   id <- resolve_snapshot_which(which, store); dir <- file.path(store, id)
   man <- yaml::read_yaml(file.path(dir, manifest_filename))
   rows <- list()
@@ -193,52 +204,43 @@ verify_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0
   list(ok = all(details$exists & details$sha256_ok), id = id, details = details)
 }
 
-# --- delete (first-class, safe, audited) -----------------------------------
-#' Delete or retire a snapshot, recording the deletion in the audit ledger
+# --- delete (first-class, safe, self-documenting) --------------------------
+#' Delete or retire a snapshot
+#'
+#' The default `mode = "retire"` moves the snapshot directory to
+#' `<store>/_deleted/<id>/`, keeping its immutable `manifest.yml` as the
+#' self-documenting record of what was removed, and writes a small
+#' `deletion-note.yml` alongside it capturing the `reason`. `mode = "destroy"`
+#' removes the directory outright.
 #' @param which Snapshot selector.
-#' @param reason Free-text reason (required; goes in the audit ledger).
+#' @param reason Free-text reason (required; recorded in `deletion-note.yml`
+#'   for a retired snapshot).
 #' @param store Snapshot store directory.
-#' @param mode `"destroy"` (remove) or `"retire"` (move to `_deleted/`).
+#' @param mode `"retire"` (move to `_deleted/`, keeping the manifest) or
+#'   `"destroy"` (remove).
 #' @param verbose Verbosity.
 #' @return The deleted id, invisibly.
 #' @export
-delete_snapshot <- function(which, reason, store = snapshot_store(verbose = 0L),
-                            mode = c("destroy", "retire"), verbose = 2L) {
+delete_snapshot <- function(which, reason, store = snapshot_location(verbose = 0L),
+                            mode = c("retire", "destroy"), verbose = 2L) {
   mode <- match.arg(mode)
   if (!is_string(reason) || !nzchar(reason))
-    cli::cli_abort("{.arg reason} is required (recorded in the audit trail).")
+    cli::cli_abort("{.arg reason} is required (recorded with the deleted snapshot).")
   id <- resolve_snapshot_which(which, store); dir <- file.path(store, id)
   Sys.chmod(list.files(dir, recursive = TRUE, full.names = TRUE, include.dirs = TRUE), "0777")
   Sys.chmod(dir, "0777")
   if (mode == "retire") {
     dest <- file.path(store, "_deleted"); dir.create(dest, showWarnings = FALSE)
-    file.rename(dir, file.path(dest, id))
+    retired <- file.path(dest, id)
+    file.rename(dir, retired)
+    yaml::write_yaml(
+      list(id = id, deleted_utc = iso8601(), mode = mode, reason = reason,
+           user = unname(Sys.info()[["user"]])),
+      file.path(retired, "deletion-note.yml")
+    )
   } else {
     unlink(dir, recursive = TRUE, force = TRUE)
   }
-  ledger_append(store, list(event = "delete", id = id, at = iso8601(),
-                             mode = mode, reason = reason,
-                             user = unname(Sys.info()[["user"]])))
-  if (verbose >= 1L) cli::cli_alert_success("snapshot {.val {id}} {mode}d (recorded in ledger).")
+  if (verbose >= 1L) cli::cli_alert_success("snapshot {.val {id}} {mode}d.")
   invisible(id)
-}
-
-# --- append-only audit ledger (human-readable YAML documents) --------------
-#' @keywords internal
-ledger_append <- function(store, record) {
-  path <- file.path(store, ledger_filename)
-  cat("---\n", yaml::as.yaml(record), sep = "", file = path, append = TRUE)
-  invisible(path)
-}
-#' Read the append-only snapshot audit ledger
-#' @param store Snapshot store directory.
-#' @return A list of ledger records, oldest first.
-#' @export
-read_ledger <- function(store = snapshot_store(verbose = 0L)) {
-  path <- file.path(store, ledger_filename)
-  if (!file.exists(path)) return(list())
-  txt <- paste(readLines(path), collapse = "\n")
-  docs <- strsplit(txt, "(^|\n)---\\s*\n")[[1]]
-  docs <- docs[nzchar(trimws(docs))]
-  lapply(docs, yaml::yaml.load)
 }

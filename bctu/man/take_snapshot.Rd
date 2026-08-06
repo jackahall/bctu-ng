@@ -6,7 +6,7 @@
 \usage{
 take_snapshot(
   source,
-  store = snapshot_store(),
+  store = snapshot_location(),
   formats = c("rds", "csv"),
   verbose = 2L
 )

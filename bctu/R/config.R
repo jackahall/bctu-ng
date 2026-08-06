@@ -97,6 +97,37 @@ snapshot_store <- function(start = getwd(), verbose = 1L) {
   store
 }
 
+#' Resolve where snapshots are saved, falling back to the working directory
+#'
+#' Unlike [snapshot_store()], which requires a `bctu-project.yml` marker and
+#' errors when none is found, this resolver falls back to the working directory
+#' so snapshots can be taken outside a project. The chosen location is ALWAYS
+#' announced, so it is never a silent guess.
+#'
+#' If a project marker is found by walking up from `start`, the project's
+#' snapshot store is used and announced with its source marker. Otherwise the
+#' current working directory is used and announced, with a hint to run
+#' [bctu_init_project()] or pass `store=` to change it.
+#' @param start Directory to search upward from for a project marker; default
+#'   the current directory.
+#' @param verbose If `>= 1`, announce the resolved location and its source.
+#' @return The absolute directory where snapshots are read and written.
+#' @export
+snapshot_location <- function(start = getwd(), verbose = 1L) {
+  marker <- find_project_marker(start)
+  if (!is.na(marker)) {
+    store <- snapshot_store(start, verbose = 0L)
+    if (verbose >= 1L)
+      cli::cli_alert_info("snapshot store: {.file {store}}  (from {.file {marker}})")
+    return(store)
+  }
+  here <- normalize_path_lenient(getwd())
+  if (verbose >= 1L)
+    cli::cli_alert_info(
+      "No bctu project found; saving snapshots in the working directory: {.file {getwd()}}. Run bctu_init_project() or pass store= to change this.")
+  here
+}
+
 #' Print the fully resolved configuration (for operators and auditors)
 #' @param start Directory to search upward from; default the current directory.
 #' @export

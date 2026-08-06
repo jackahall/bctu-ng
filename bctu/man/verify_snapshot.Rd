@@ -4,7 +4,7 @@
 \alias{verify_snapshot}
 \title{Verify a snapshot's on-disk integrity against its manifest (SHA-256)}
 \usage{
-verify_snapshot(which = "latest", store = snapshot_store(verbose = 0L))
+verify_snapshot(which = "latest", store = snapshot_location(verbose = 0L))
 }
 \arguments{
 \item{which}{Snapshot selector.}

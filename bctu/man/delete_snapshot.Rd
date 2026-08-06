@@ -2,24 +2,26 @@
 % Please edit documentation in R/snapshot.R
 \name{delete_snapshot}
 \alias{delete_snapshot}
-\title{Delete or retire a snapshot, recording the deletion in the audit ledger}
+\title{Delete or retire a snapshot}
 \usage{
 delete_snapshot(
   which,
   reason,
-  store = snapshot_store(verbose = 0L),
-  mode = c("destroy", "retire"),
+  store = snapshot_location(verbose = 0L),
+  mode = c("retire", "destroy"),
   verbose = 2L
 )
 }
 \arguments{
 \item{which}{Snapshot selector.}
 
-\item{reason}{Free-text reason (required; goes in the audit ledger).}
+\item{reason}{Free-text reason (required; recorded in \code{deletion-note.yml}
+for a retired snapshot).}
 
 \item{store}{Snapshot store directory.}
 
-\item{mode}{\code{"destroy"} (remove) or \code{"retire"} (move to \verb{_deleted/}).}
+\item{mode}{\code{"retire"} (move to \verb{_deleted/}, keeping the manifest) or
+\code{"destroy"} (remove).}
 
 \item{verbose}{Verbosity.}
 }
@@ -27,5 +29,9 @@ delete_snapshot(
 The deleted id, invisibly.
 }
 \description{
-Delete or retire a snapshot, recording the deletion in the audit ledger
+The default \code{mode = "retire"} moves the snapshot directory to
+\verb{<store>/_deleted/<id>/}, keeping its immutable \code{manifest.yml} as the
+self-documenting record of what was removed, and writes a small
+\code{deletion-note.yml} alongside it capturing the \code{reason}. \code{mode = "destroy"}
+removes the directory outright.
 }
