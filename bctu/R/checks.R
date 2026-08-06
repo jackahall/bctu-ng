@@ -1,266 +1,135 @@
 # ---------------------------------------------------------------------------
 # Checks: DVP (Data Validation) and CDI (Critical Data Items)
 # ---------------------------------------------------------------------------
-# A check reads a snapshot's tables and returns a tidy set of findings. Every
-# finding has the same fixed shape, so the identity of a finding is always
-# well-defined and two reports can be compared reliably.
+# A DVP is a single function of a snapshot's data that returns a NAMED list of
+# findings. Each named element is one check; the name becomes the worksheet
+# name. Findings are free-form data frames: a check returns whatever columns it
+# needs (one field, several fields, or cross-record combinations). Nothing about
+# the shape of a finding is fixed, so a check can report whatever combination of
+# variables and records raised it.
 #
-# The central design point is the UPDATE DIFF. When a Data Validation Report
-# (DVR) is issued, we record which snapshot it was built from in a DVR ledger.
-# The next report's "what is new since last time" is computed against THAT
-# recorded snapshot, never against "whatever snapshot happens to be second
-# newest on disk". A stray snapshot taken between two reports can therefore
-# never become the baseline. If the recorded baseline snapshot cannot be
-# loaded, we stop with a clear error rather than silently reporting everything
-# as new.
+# To see what has changed, the SAME DVP function is run on two datasets (a
+# `before` and an `after` snapshot) and the findings are compared whole-row per
+# check: a finding is `new` if its entire row appears in `after` but not
+# `before`, `resolved` if it appears in `before` but not `after`, `unchanged` if
+# in both. There is no baseline ledger and no fixed finding key; the two
+# datasets you pass ARE the comparison.
 
-# --- the fixed finding schema ----------------------------------------------
-# Every finding is one row with exactly these columns, in this order.
-finding_columns <- c(
-  "record_id", "event", "form", "field", "value", "reason",
-  "check_id", "severity"
-)
-
-# A check author must always supply at least these; the rest default to NA.
-required_finding_columns <- c("record_id", "field", "reason")
-
-#' A clean (zero-finding) findings table
+# --- running a DVP ----------------------------------------------------------
+#' Run a DVP function on one dataset and validate its output
 #'
-#' Use this to say "this check found nothing". It has the correct columns and
-#' no rows.
-#' @return An empty findings data frame with the fixed schema.
+#' A DVP is `function(data)` returning a named list, one element per check. Each
+#' element is a data frame of findings (or `NULL` / an empty data frame when the
+#' check finds nothing). The function is rejected with a clear error if it does
+#' not return a named list, so a malformed DVP fails immediately rather than
+#' producing an unusable report.
+#' @param dvp A function of the data returning a named list of findings.
+#' @param data The data the DVP reads: usually a snapshot (a named list of data
+#'   frames), but any object the DVP function accepts.
+#' @return A named list of findings data frames (empty frames kept in place).
 #' @export
-no_findings <- function() {
-  empty <- stats::setNames(
-    replicate(length(finding_columns), character(0), simplify = FALSE),
-    finding_columns
-  )
-  structure(as.data.frame(empty, stringsAsFactors = FALSE),
-            class = c("bctu_findings", "data.frame"))
-}
-
-#' Build a valid findings table
-#'
-#' The convenient way for a check to report findings. Supply one entry per
-#' finding (vectors are recycled). Only `record_id`, `field` and `reason` are
-#' required; `event`, `form`, `value`, `check_id` and `severity` default to
-#' missing and are usually filled in for you when the check runs.
-#' @param record_id Participant/record identifier.
-#' @param field The data field the finding is about.
-#' @param reason Plain-English description of the problem.
-#' @param value The offending value (optional).
-#' @param event Event/visit (optional).
-#' @param form CRF/form name (optional).
-#' @param check_id Check identifier (optional; stamped from the check).
-#' @param severity Severity label (optional; stamped from the check).
-#' @return A findings data frame with the fixed schema.
-#' @export
-new_findings <- function(record_id, field, reason, value = NA,
-                         event = NA, form = NA, check_id = NA, severity = NA) {
-  df <- data.frame(
-    record_id = as.character(record_id),
-    event     = as.character(event),
-    form      = as.character(form),
-    field     = as.character(field),
-    value     = as.character(value),
-    reason    = as.character(reason),
-    check_id  = as.character(check_id),
-    severity  = as.character(severity),
-    stringsAsFactors = FALSE
-  )
-  as_findings(df)
-}
-
-#' Validate and normalise a findings table at the check boundary
-#'
-#' Accepts a data frame produced by a check and returns it in the fixed
-#' schema. Rejects any column that is not part of the schema (so a check cannot
-#' quietly introduce a column that would break the update diff), and requires
-#' the mandatory columns. Missing optional columns are added as `NA`. All
-#' values are stored as text so findings compare cleanly across reports.
-#' @param x A data frame, a findings table, or `NULL`/zero rows (treated clean).
-#' @return A `bctu_findings` data frame.
-#' @export
-as_findings <- function(x) {
-  if (is.null(x)) return(no_findings())
-  if (!is.data.frame(x))
+run_dvp <- function(dvp, data) {
+  if (!is.function(dvp))
     cli::cli_abort(c(
-      "A check must return a data frame of findings.",
-      "i" = "Build it with {.fn new_findings} or return {.fn no_findings}."))
-  if (nrow(x) == 0L) return(no_findings())
+      "A DVP must be a function of the data.",
+      "i" = "Write it as {.code function(data) list(check_one = ..., check_two = ...)}."))
 
-  unknown <- setdiff(names(x), finding_columns)
-  if (length(unknown))
+  findings <- dvp(data)
+
+  ok_named_list <- is.list(findings) && !is.data.frame(findings) &&
+    length(findings) > 0L && !is.null(names(findings)) &&
+    all(nzchar(names(findings))) && !anyDuplicated(names(findings))
+  if (!ok_named_list)
     cli::cli_abort(c(
-      "A check returned column{?s} not allowed in the finding schema: {.val {unknown}}.",
-      "i" = "Allowed columns are: {.val {finding_columns}}.",
-      "x" = "Arbitrary columns are rejected so the update-diff key stays well-defined."))
+      "A DVP function must return a named list of findings, one element per check.",
+      "x" = "Each element needs a non-empty, unique name (used as the worksheet name).",
+      "i" = "For example: {.code function(data) list(weight_range = ..., visit_order = ...)}."))
 
-  missing_required <- setdiff(required_finding_columns, names(x))
-  if (length(missing_required))
-    cli::cli_abort("A check is missing required finding column{?s}: {.val {missing_required}}.")
-
-  for (col in finding_columns)
-    x[[col]] <- if (col %in% names(x)) as.character(x[[col]]) else NA_character_
-
-  x <- x[, finding_columns, drop = FALSE]
-  rownames(x) <- NULL
-  structure(x, class = c("bctu_findings", "data.frame"))
-}
-
-#' @export
-print.bctu_findings <- function(x, ...) {
-  cli::cli_text("{.strong bctu findings}: {nrow(x)} row{?s}")
-  if (nrow(x)) print(as.data.frame(x), row.names = FALSE)
-  invisible(x)
-}
-
-# --- a check ----------------------------------------------------------------
-#' Define a data-validation check
-#'
-#' A check is a named rule that reads a snapshot's tables and returns findings.
-#' The `run` function receives the snapshot's tables (a named list of data
-#' frames) and must return a findings table (use [new_findings()] or
-#' [no_findings()]).
-#' @param id Short identifier, e.g. `"weight_range"`. Stamped onto findings.
-#' @param run `function(tables)` returning a findings table.
-#' @param description Plain-English description of what the check looks for.
-#' @param default_severity Severity stamped onto findings that do not set one.
-#' @return A `bctu_check` object.
-#' @export
-bctu_check <- function(id, run, description = "", default_severity = "query") {
-  if (!is_string(id)) cli::cli_abort("{.arg id} must be a single string.")
-  if (!is.function(run)) cli::cli_abort("{.arg run} must be a function of {.arg tables}.")
-  if (!is_string(default_severity))
-    cli::cli_abort("{.arg default_severity} must be a single string.")
-  structure(
-    list(id = id, run = run, description = description,
-         default_severity = default_severity),
-    class = "bctu_check"
-  )
-}
-
-#' @export
-print.bctu_check <- function(x, ...) {
-  cli::cli_rule("bctu check {.val {x$id}}")
-  if (nzchar(x$description)) cli::cli_text(x$description)
-  cli::cli_text("default severity: {.val {x$default_severity}}")
-  invisible(x)
-}
-
-#' Content hash of a check (identifies the exact rule that ran)
-#'
-#' Two checks with the same id but different logic hash differently, so the
-#' audit record pins the rule that actually produced the findings.
-#' @param check A [bctu_check()].
-#' @return A short hex string.
-#' @export
-check_hash <- function(check) {
-  if (!inherits(check, "bctu_check")) cli::cli_abort("{.arg check} must be a {.cls bctu_check}.")
-  digest::digest(list(
-    id = check$id,
-    default_severity = check$default_severity,
-    body = paste(deparse(body(check$run)), collapse = "\n"),
-    args = names(formals(check$run))
-  ), algo = "sha256")
-}
-
-#' Run a check on a snapshot's tables and return stamped findings
-#'
-#' Executes the check, validates its output against the fixed schema, and
-#' stamps the check id and default severity onto any finding that did not set
-#' them.
-#' @param check A [bctu_check()].
-#' @param tables A named list of data frames (a snapshot is one).
-#' @return A `bctu_findings` data frame.
-#' @export
-run_check <- function(check, tables) {
-  if (!inherits(check, "bctu_check")) cli::cli_abort("{.arg check} must be a {.cls bctu_check}.")
-  findings <- as_findings(check$run(tables))
-  if (nrow(findings)) {
-    blank <- function(v) is.na(v) | !nzchar(v)
-    findings$check_id[blank(findings$check_id)] <- check$id
-    findings$severity[blank(findings$severity)] <- check$default_severity
+  for (nm in names(findings)) {
+    el <- findings[[nm]]
+    if (is.null(el)) {
+      findings[[nm]] <- data.frame()
+    } else if (!is.data.frame(el)) {
+      cli::cli_abort(c(
+        "Check {.val {nm}} must return a data frame of findings.",
+        "i" = "Return an empty data frame (or {.code NULL}) when the check finds nothing."))
+    }
   }
   findings
 }
 
-# --- update diff (the corrected baseline logic) ----------------------------
-# Finding identity is check_id + record_id + field. It deliberately does NOT
-# include value or reason, so a still-open finding whose value was re-derived
-# to a slightly different float is recognised as the SAME finding (classified
-# "changed"), not dropped and re-added.
-
-#' Stable identity key of each finding (check_id + record_id + field)
-#' @param findings A findings table.
-#' @return A character vector of identity keys.
-#' @export
-finding_identity <- function(findings) {
-  paste(findings$check_id, findings$record_id, findings$field, sep = "\x1f")
-}
-
-#' Classify current findings against a baseline set
+# --- before / after comparison ---------------------------------------------
+#' Whole-row identity keys for a findings data frame
 #'
-#' Every current finding is labelled `new` (identity absent from baseline),
-#' `changed` (identity present but value or reason differs) or `unchanged`.
-#' Every baseline finding whose identity is gone is labelled `resolved`. All
-#' four classes are returned (resolutions are audit-relevant).
-#' @param current Current findings.
-#' @param baseline Baseline findings (zero rows if there was no prior report).
-#' @return A findings data frame with an added `change_class` column.
+#' Joins every column of each row into one string, so two findings are the same
+#' only when their entire rows match. Findings are free-form, so identity is the
+#' whole row and nothing is assumed about column names.
+#' @param df A findings data frame.
+#' @return A character vector of one key per row (empty for a zero-row frame).
 #' @export
-classify_findings <- function(current, baseline) {
-  current  <- as_findings(current)
-  baseline <- as_findings(baseline)
+finding_row_keys <- function(df) {
+  if (nrow(df) == 0L) return(character(0))
+  do.call(paste, c(lapply(df, as.character), sep = "\x1f"))
+}
 
-  cur_key  <- finding_identity(current)
-  base_key <- finding_identity(baseline)
-
-  cur_class <- character(nrow(current))
-  hit <- match(cur_key, base_key)
-  for (i in seq_len(nrow(current))) {
-    j <- hit[i]
-    if (is.na(j)) {
-      cur_class[i] <- "new"
-    } else {
-      same_value  <- identical(current$value[i],  baseline$value[j])
-      same_reason <- identical(current$reason[i], baseline$reason[j])
-      cur_class[i] <- if (same_value && same_reason) "unchanged" else "changed"
-    }
+#' Row-bind two findings frames, tolerating differing columns
+#'
+#' The `before` and `after` findings for one check share the same columns, so
+#' this is a plain `rbind` in normal use; the column union only matters for the
+#' edge case where a check appears in one run but not the other.
+#' @param x,y Findings data frames.
+#' @return One data frame with the union of columns.
+#' @export
+bind_findings <- function(x, y) {
+  if (nrow(x) == 0L && nrow(y) == 0L) {
+    cols <- union(names(x), names(y))
+    return(as.data.frame(
+      stats::setNames(replicate(length(cols), character(0), simplify = FALSE), cols),
+      stringsAsFactors = FALSE))
   }
-  current$change_class <- cur_class
-
-  resolved_idx <- which(!(base_key %in% cur_key))
-  resolved <- baseline[resolved_idx, , drop = FALSE]
-  resolved$change_class <- rep("resolved", nrow(resolved))
-
-  out <- rbind(current, resolved)
+  if (nrow(x) == 0L) return(y)
+  if (nrow(y) == 0L) return(x)
+  cols <- union(names(x), names(y))
+  for (col in setdiff(cols, names(x))) x[[col]] <- NA
+  for (col in setdiff(cols, names(y))) y[[col]] <- NA
+  out <- rbind(x[cols], y[cols])
   rownames(out) <- NULL
-  structure(out, class = c("bctu_findings", "data.frame"))
+  out
 }
 
-# --- DVR ledger (records which snapshot each issued report was built from) --
-#' Read the append-only DVR ledger for a checks output directory
-#' @param output_dir Directory holding the reports and the ledger.
-#' @param kind `"dvr"` or `"cdi"` (each kind has its own ledger file).
-#' @return A list of ledger records, oldest first.
+#' Compare a DVP's findings between two datasets (before vs after)
+#'
+#' Runs `dvp` on `before` and on `after` and, for every check, labels each
+#' finding whole-row: `new` (row present in `after` but not `before`),
+#' `resolved` (row present in `before` but not `after`) or `unchanged` (row in
+#' both). A check that returns different columns is compared on exactly the
+#' columns it returns.
+#' @param dvp A DVP function (see [run_dvp()]).
+#' @param before,after The two datasets (snapshots) to compare.
+#' @return A named list; each element is that check's findings with an added
+#'   `status` column (`new` / `unchanged` / `resolved`).
 #' @export
-read_dvr_ledger <- function(output_dir, kind = c("dvr", "cdi")) {
-  kind <- match.arg(kind)
-  path <- file.path(output_dir, paste0(toupper(kind), ".log.yml"))
-  if (!file.exists(path)) return(list())
-  txt <- paste(readLines(path), collapse = "\n")
-  docs <- strsplit(txt, "(^|\n)---\\s*\n")[[1]]
-  docs <- docs[nzchar(trimws(docs))]
-  lapply(docs, yaml::yaml.load)
-}
+compare_dvp <- function(dvp, before, after) {
+  b <- run_dvp(dvp, before)
+  a <- run_dvp(dvp, after)
 
-#' Append one record to a DVR ledger (append-only)
-#' @keywords internal
-append_dvr_ledger <- function(output_dir, kind, record) {
-  path <- file.path(output_dir, paste0(toupper(kind), ".log.yml"))
-  cat("---\n", yaml::as.yaml(record), sep = "", file = path, append = TRUE)
-  invisible(path)
+  checks <- union(names(a), names(b))
+  out <- stats::setNames(vector("list", length(checks)), checks)
+  for (nm in checks) {
+    bf <- if (is.null(b[[nm]])) data.frame() else b[[nm]]
+    af <- if (is.null(a[[nm]])) data.frame() else a[[nm]]
+    bk <- finding_row_keys(bf)
+    ak <- finding_row_keys(af)
+
+    current <- af
+    current$status <- if (nrow(af)) ifelse(ak %in% bk, "unchanged", "new") else character(0)
+
+    resolved <- bf[!(bk %in% ak), , drop = FALSE]
+    resolved$status <- if (nrow(resolved)) "resolved" else character(0)
+
+    out[[nm]] <- bind_findings(current, resolved)
+  }
+  out
 }
 
 # --- snapshot fingerprint ---------------------------------------------------
@@ -280,274 +149,317 @@ snapshot_fingerprint <- function(snapshot) {
   digest::digest(sort(unname(shas)), algo = "sha256")
 }
 
-# --- site resolution (for optional per-site workbooks) ---------------------
-#' Resolve a site for each finding from findings and data
+# --- trial name and per-site resolution ------------------------------------
+#' The study/trial name carried on a snapshot
 #'
-#' The finding schema has no site column, so sites are looked up from the
-#' snapshot's data: any table carrying both `record_id` and `site_field`
-#' provides the map. Findings whose record has no site come back as `NA`.
-#' @param findings A findings table.
-#' @param tables The snapshot's tables (a named list of data frames).
-#' @param site_field Name of the site column in the data. Default `"site"`.
+#' Read from the snapshot's own metadata (which the datasource sets), so a
+#' report never needs the trial name passed in by hand. Falls back to
+#' `"snapshot"` when a snapshot carries no name.
+#' @param snapshot A `bctu_snapshot`.
+#' @return A filesystem-safe study/trial token.
+#' @export
+report_trial_name <- function(snapshot) {
+  meta <- attr(snapshot, "bctu_meta")
+  sanitise_study_name(if (is.list(meta)) meta$name else NULL)
+}
+
+#' Site label for each finding row, looked up from the snapshot
+#'
+#' Findings carry only what the check selected, so sites are resolved from the
+#' snapshot: any table holding both `id_col` and `site_col` maps a record to a
+#' site. Findings whose record has no site (or whose frame has no `id_col`) are
+#' labelled `NO_SITE` so they are never silently dropped from the split.
+#' @param findings A findings data frame.
+#' @param snapshot The snapshot the findings came from.
+#' @param id_col Name of the record-id column shared by findings and data.
+#' @param site_col Name of the site column in the data.
 #' @return A character vector of sites, one per finding row.
 #' @export
-resolve_sites <- function(findings, tables, site_field = "site") {
-  site_of <- character(0)
-  for (nm in names(tables)) {
-    tab <- tables[[nm]]
-    if (all(c("record_id", site_field) %in% names(tab))) {
-      map <- stats::setNames(as.character(tab[[site_field]]), as.character(tab$record_id))
-      site_of <- c(site_of, map[!names(map) %in% names(site_of)])
+resolve_finding_sites <- function(findings, snapshot, id_col, site_col) {
+  map <- character(0)
+  for (nm in names(snapshot)) {
+    tab <- snapshot[[nm]]
+    if (is.data.frame(tab) && all(c(id_col, site_col) %in% names(tab))) {
+      add <- stats::setNames(as.character(tab[[site_col]]), as.character(tab[[id_col]]))
+      map <- c(map, add[!names(add) %in% names(map)])
     }
   }
-  unname(site_of[as.character(findings$record_id)])
+  ids <- if (id_col %in% names(findings)) as.character(findings[[id_col]])
+         else rep(NA_character_, nrow(findings))
+  site <- unname(map[ids])
+  site[is.na(site) | !nzchar(site)] <- "NO_SITE"
+  site
 }
 
-# --- readable + optional xlsx writers --------------------------------------
-#' Write a findings table as a readable CSV and a plain-text copy
-#' @keywords internal
-write_findings_readable <- function(findings, path_no_ext) {
-  utils::write.csv(as.data.frame(findings), paste0(path_no_ext, ".csv"),
-                   row.names = FALSE, na = "")
-  txt <- if (nrow(findings)) utils::capture.output(print(as.data.frame(findings), row.names = FALSE))
-         else "(no findings)"
-  writeLines(txt, paste0(path_no_ext, ".txt"))
-  invisible(path_no_ext)
-}
-
-#' Optionally write findings to an Excel workbook (thin formatter)
+# --- writers ----------------------------------------------------------------
+#' Write each check's findings as a readable CSV and plain-text copy
 #'
-#' A convenience only: the CSV/TXT copies carry the same content, so the check
+#' One pair of files per check, named by the check. Gives a fully testable,
+#' Excel-free record of every finding.
+#' @param sheets A named list of findings data frames.
+#' @param dir Directory to write into (created if missing).
+#' @return Invisibly, the directory.
+#' @export
+write_findings_readable <- function(sheets, dir) {
+  if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  for (nm in names(sheets)) {
+    safe <- gsub("[^A-Za-z0-9_-]+", "_", nm)
+    df <- as.data.frame(sheets[[nm]])
+    utils::write.csv(df, file.path(dir, paste0(safe, ".csv")), row.names = FALSE, na = "")
+    txt <- if (nrow(df)) utils::capture.output(print(df, row.names = FALSE)) else "(no findings)"
+    writeLines(txt, file.path(dir, paste0(safe, ".txt")))
+  }
+  invisible(dir)
+}
+
+#' Write a set of checks to one Excel workbook, one worksheet per check
+#'
+#' A convenience only: the CSV/TXT copies carry the same content, so the DVP
 #' logic is fully testable without Excel. Uses `openxlsx` if installed; if not,
-#' warns and does nothing. With `per_site`, one sheet per site is written and
-#' findings with no site go to a `NO_SITE` sheet.
-#' @keywords internal
-write_findings_xlsx <- function(sheets, path, sites = NULL, per_site = FALSE) {
+#' warns and does nothing. Worksheet names are the check names, trimmed to
+#' Excel's 31-character limit (de-duplicated if trimming collides).
+#' @param sheets A named list of findings data frames.
+#' @param path Workbook path (`.xlsx`).
+#' @return Invisibly, the path (or `NULL` if `openxlsx` is unavailable or there
+#'   is nothing to write).
+#' @export
+write_findings_workbook <- function(sheets, path) {
+  if (!length(sheets)) return(invisible(NULL))
   if (!requireNamespace("openxlsx", quietly = TRUE)) {
     cli::cli_warn(c("{.pkg openxlsx} is not installed; skipping the Excel workbook.",
                     "i" = "The CSV and TXT copies contain the same findings."))
     return(invisible(NULL))
   }
   wb <- openxlsx::createWorkbook()
+  used <- character(0)
   for (nm in names(sheets)) {
-    openxlsx::addWorksheet(wb, nm)
-    openxlsx::writeData(wb, nm, as.data.frame(sheets[[nm]]))
-  }
-  if (per_site && !is.null(sites)) {
-    full <- sheets[["Full"]]
-    site_vec <- ifelse(is.na(sites) | !nzchar(sites), "NO_SITE", sites)
-    for (s in sort(unique(site_vec))) {
-      sheet <- substr(gsub("[^A-Za-z0-9_ -]", "_", s), 1L, 31L)
-      openxlsx::addWorksheet(wb, sheet)
-      openxlsx::writeData(wb, sheet, as.data.frame(full[site_vec == s, , drop = FALSE]))
-    }
+    sheet <- substr(gsub("[^A-Za-z0-9_ -]", "_", nm), 1L, 31L)
+    while (sheet %in% used) sheet <- substr(paste0(sheet, "_"), 1L, 31L)
+    used <- c(used, sheet)
+    openxlsx::addWorksheet(wb, sheet)
+    openxlsx::writeData(wb, sheet, as.data.frame(sheets[[nm]]))
   }
   openxlsx::saveWorkbook(wb, path, overwrite = FALSE)
   invisible(path)
 }
 
-# --- the report engine ------------------------------------------------------
-#' Build a Data Validation Report (DVR) from a snapshot and a check
+#' Drop checks with no findings
 #'
-#' Runs `check` on `snapshot`, writes the FULL findings set and an UPDATE set
-#' (new / changed / resolved since the last issued DVR), records an auditable
-#' manifest and a DVR-ledger entry, and returns the result invisibly. The
-#' update diff is computed against the snapshot the LAST ISSUED DVR was built
-#' from (read from the DVR ledger), never against a directory position.
-#' @param snapshot A saved `bctu_snapshot` (must carry `id` and `dir`).
-#' @param check A [bctu_check()].
-#' @param output_dir Directory to hold DVRs and the DVR ledger.
-#' @param operator Person issuing the report (recorded); default the OS user.
-#' @param write_xlsx Also write an Excel workbook if `openxlsx` is available?
-#' @param per_site Write per-site sheets in the workbook?
-#' @param site_field Name of the site column in the data. Default `"site"`.
-#' @param verbose Verbosity.
-#' @return Invisibly, a list with the report id, paths, and per-class counts.
+#' Empty checks get no worksheet, matching the delivered DVR (an all-clear check
+#' is not a blank tab). The names are preserved for the checks that remain.
+#' @param sheets A named list of findings data frames.
+#' @return The subset of `sheets` with at least one row.
 #' @export
-save_dvr <- function(snapshot, check, output_dir, operator = NULL,
-                     write_xlsx = TRUE, per_site = FALSE, site_field = "site",
-                     verbose = 2L) {
-  run_data_report(snapshot, check, output_dir, kind = "dvr", operator = operator,
-                  write_xlsx = write_xlsx, per_site = per_site,
-                  site_field = site_field, verbose = verbose)
+nonempty_checks <- function(sheets) {
+  sheets[vapply(sheets, function(d) nrow(d) > 0L, logical(1))]
 }
 
-#' Build a Critical Data Items (CDI) report from a snapshot and a check
+#' Write one report set: an overall workbook plus (optionally) per-site workbooks
 #'
-#' Identical machinery to [save_dvr()] with its own ledger and file naming.
-#' @inheritParams save_dvr
-#' @return Invisibly, a list with the report id, paths, and per-class counts.
+#' Writes the readable CSV/TXT copies and, when `write_xlsx`, an overall
+#' workbook of all findings. When `site_col` is given, each finding is assigned
+#' a site from the snapshot and a per-site workbook is written under `sites/`,
+#' so a centre receives only its own queries alongside the overall set.
+#' @param sheets A named list of findings data frames (empty checks omitted).
+#' @param snapshot The snapshot the findings came from (for site lookup).
+#' @param dir Directory to write this set into.
+#' @param base_name File stem for the workbooks.
+#' @param id_col,site_col Columns used to split by site; `site_col = NULL`
+#'   writes the overall workbook only.
+#' @param write_xlsx Write Excel workbooks (needs `openxlsx`)?
+#' @return Invisibly, the directory.
 #' @export
-save_cdi <- function(snapshot, check, output_dir, operator = NULL,
-                     write_xlsx = TRUE, per_site = FALSE, site_field = "site",
-                     verbose = 2L) {
-  run_data_report(snapshot, check, output_dir, kind = "cdi", operator = operator,
-                  write_xlsx = write_xlsx, per_site = per_site,
-                  site_field = site_field, verbose = verbose)
+write_report_set <- function(sheets, snapshot, dir, base_name,
+                             id_col = "record_id", site_col = NULL,
+                             write_xlsx = TRUE) {
+  if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  filled <- nonempty_checks(sheets)
+
+  write_findings_readable(sheets, dir)
+  if (!isTRUE(write_xlsx) || !length(filled)) return(invisible(dir))
+
+  write_findings_workbook(filled, file.path(dir, paste0(base_name, ".xlsx")))
+
+  if (!is.null(site_col)) {
+    site_of <- lapply(filled, function(d)
+      resolve_finding_sites(d, snapshot, id_col, site_col))
+    all_sites <- sort(unique(unlist(site_of)))
+    for (s in all_sites) {
+      per_check <- list()
+      for (nm in names(filled)) {
+        rows <- filled[[nm]][site_of[[nm]] == s, , drop = FALSE]
+        if (nrow(rows)) per_check[[nm]] <- rows
+      }
+      if (!length(per_check)) next
+      safe_site <- gsub("[^A-Za-z0-9_-]+", "_", s)
+      sdir <- file.path(dir, "sites", safe_site)
+      dir.create(sdir, recursive = TRUE, showWarnings = FALSE)
+      write_findings_workbook(per_check,
+        file.path(sdir, paste0(base_name, "_", safe_site, ".xlsx")))
+    }
+  }
+  invisible(dir)
+}
+
+# --- the report engine ------------------------------------------------------
+#' Build a Data Validation Report (DVR) from a DVP function and a snapshot
+#'
+#' Runs `dvp` on the `after` snapshot and writes, to every directory in `paths`,
+#' an overall workbook (one worksheet per non-empty check) plus per-site
+#' workbooks when `site_col` is given, the readable CSV/TXT copies, and an
+#' auditable YAML manifest. When a `before` snapshot is supplied, each finding
+#' is labelled `new` / `unchanged` / `resolved` by a whole-row comparison of the
+#' two runs (see [compare_dvp()]) and an additional `update/` set of the changed
+#' rows (new or resolved) is written alongside the full set. The trial name is
+#' taken from the snapshot itself (see [report_trial_name()]); nothing about the
+#' trial has to be passed in.
+#' @param dvp A DVP function: `function(data)` returning a named list of
+#'   findings (see [run_dvp()]).
+#' @param after The current snapshot the report is about.
+#' @param before Optional earlier snapshot to compare against; when `NULL` the
+#'   report lists the current findings with no change labelling and no `update/`.
+#' @param paths One or more directories to receive the report (the report is
+#'   written to each). Defaults to the working directory.
+#' @param id_col Record-id column used to map findings to sites. Default
+#'   `"record_id"`.
+#' @param site_col Site column in the data; when `NULL` (default) no per-site
+#'   split is written.
+#' @param version Optional DVP version string, recorded and added to file names.
+#' @param operator Person issuing the report (recorded); default the OS user.
+#' @param write_xlsx Also write Excel workbooks if `openxlsx` is available?
+#' @param verbose Verbosity.
+#' @return Invisibly, a list with the report id, directories written, sheets,
+#'   and per-check counts.
+#' @export
+save_dvr <- function(dvp, after, before = NULL, paths = getwd(),
+                     id_col = "record_id", site_col = NULL, version = NULL,
+                     operator = NULL, write_xlsx = TRUE, verbose = 2L) {
+  run_data_report(dvp, after, before, paths, kind = "dvr", id_col = id_col,
+                  site_col = site_col, version = version, operator = operator,
+                  write_xlsx = write_xlsx, verbose = verbose)
+}
+
+#' Build a Critical Data Items (CDI) report from a DVP function and a snapshot
+#'
+#' Identical machinery to [save_dvr()] with its own label. A CDI has no update
+#' comparison, so `before` is not accepted.
+#' @inheritParams save_dvr
+#' @return Invisibly, a list with the report id, directories written, sheets,
+#'   and per-check counts.
+#' @export
+save_cdi <- function(dvp, after, paths = getwd(), id_col = "record_id",
+                     site_col = NULL, version = NULL, operator = NULL,
+                     write_xlsx = TRUE, verbose = 2L) {
+  run_data_report(dvp, after, before = NULL, paths, kind = "cdi", id_col = id_col,
+                  site_col = site_col, version = version, operator = operator,
+                  write_xlsx = write_xlsx, verbose = verbose)
 }
 
 #' Shared engine behind [save_dvr()] and [save_cdi()]
 #'
 #' Explicitly named (no hidden helper): the DVR and CDI wrappers differ only in
-#' their `kind` label, ledger file, and output naming.
+#' their `kind` label and whether an update comparison is offered.
 #' @inheritParams save_dvr
 #' @param kind `"dvr"` or `"cdi"`.
 #' @return Invisibly, a list describing the written report.
 #' @export
-run_data_report <- function(snapshot, check, output_dir, kind = c("dvr", "cdi"),
-                            operator = NULL, write_xlsx = TRUE, per_site = FALSE,
-                            site_field = "site", verbose = 2L) {
+run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
+                            kind = c("dvr", "cdi"), id_col = "record_id",
+                            site_col = NULL, version = NULL, operator = NULL,
+                            write_xlsx = TRUE, verbose = 2L) {
   kind <- match.arg(kind)
-  if (!inherits(snapshot, "bctu_snapshot"))
-    cli::cli_abort("{.arg snapshot} must be a {.cls bctu_snapshot}.")
-  if (!inherits(check, "bctu_check"))
-    cli::cli_abort("{.arg check} must be a {.cls bctu_check}.")
-
-  current_id  <- attr(snapshot, "id")
-  current_dir <- attr(snapshot, "dir")
-  if (is.null(current_id) || is.null(current_dir))
-    cli::cli_abort(c(
-      "This snapshot has not been saved to a store, so it has no id to report from.",
-      "i" = "Take it with {.fn take_snapshot} (or {.fn save_snapshot}) first."))
-  store <- dirname(current_dir)
+  paths <- as.character(paths)
+  if (!length(paths))
+    cli::cli_abort("{.arg paths} must name at least one output directory.")
   operator <- operator %||% unname(Sys.info()[["user"]]) %||% "unknown"
+  trial <- report_trial_name(after)
+  compared <- !is.null(before)
 
-  if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  sheets <- if (compared) compare_dvp(dvp, before, after) else run_dvp(dvp, after)
 
-  chash <- check_hash(check)
-  current_findings <- run_check(check, snapshot)
-
-  # ---- resolve the baseline from the DVR ledger (NOT directory position) ----
-  ledger <- read_dvr_ledger(output_dir, kind)
-  prior <- Filter(function(r) identical(r$kind, kind) &&
-                              identical(r$check_id, check$id), ledger)
-
-  if (length(prior) == 0L) {
-    baseline_id <- NA_character_
-    baseline_sha <- NA_character_
-    baseline_dvr_id <- NA_character_
-    baseline_findings <- no_findings()
-    baseline_decision <- paste0(
-      "No prior issued ", toupper(kind), " for check '", check$id,
-      "': every finding is new.")
-  } else {
-    last <- prior[[length(prior)]]
-    baseline_id <- last$snapshot_id
-    baseline_dvr_id <- last$dvr_id
-    baseline_snapshot <- tryCatch(
-      load_snapshot(baseline_id, store = store, verbose = 0L),
-      error = function(e) e)
-    if (inherits(baseline_snapshot, "condition"))
-      cli::cli_abort(c(
-        "The baseline snapshot for the update diff could not be loaded.",
-        "x" = "Last issued {toupper(kind)} {.val {baseline_dvr_id}} was built from snapshot {.val {baseline_id}}, which is missing or unreadable in {.file {store}}.",
-        "i" = "Restore that snapshot, or re-issue a baseline; bctu will NOT silently report every finding as new.",
-        "!" = conditionMessage(baseline_snapshot)))
-    baseline_sha <- snapshot_fingerprint(baseline_snapshot)
-    if (!identical(last$check_hash, chash))
-      cli::cli_warn(c(
-        "The check content has changed since the baseline {toupper(kind)} was issued.",
-        "i" = "Baseline findings are re-derived with the CURRENT check on snapshot {.val {baseline_id}}."))
-    baseline_findings <- run_check(check, baseline_snapshot)
-    baseline_decision <- paste0(
-      "Baseline = snapshot '", baseline_id, "' from last issued ", toupper(kind),
-      " '", baseline_dvr_id, "' (check '", check$id, "').")
+  update_sheets <- NULL
+  if (compared) {
+    update_sheets <- stats::setNames(lapply(sheets, function(d) {
+      if (!("status" %in% names(d)) || nrow(d) == 0L) return(d[0, , drop = FALSE])
+      d[d$status %in% c("new", "resolved"), , drop = FALSE]
+    }), names(sheets))
   }
 
-  classified <- classify_findings(current_findings, baseline_findings)
+  # ---- per-check counts (with status tallies when compared) ----
+  check_summaries <- lapply(names(sheets), function(nm) {
+    df <- sheets[[nm]]
+    rec <- list(name = nm, rows = nrow(df))
+    if (compared && "status" %in% names(df)) {
+      rec$new       <- sum(df$status == "new")
+      rec$unchanged <- sum(df$status == "unchanged")
+      rec$resolved  <- sum(df$status == "resolved")
+    }
+    rec
+  })
+  total_rows <- sum(vapply(sheets, nrow, integer(1)))
 
-  full   <- classified[classified$change_class %in% c("new", "changed", "unchanged"), , drop = FALSE]
-  update <- classified[classified$change_class %in% c("new", "changed", "resolved"), , drop = FALSE]
-  rownames(full) <- NULL; rownames(update) <- NULL
-
-  counts <- c(
-    new       = sum(classified$change_class == "new"),
-    changed   = sum(classified$change_class == "changed"),
-    unchanged = sum(classified$change_class == "unchanged"),
-    resolved  = sum(classified$change_class == "resolved")
-  )
-
-  # ---- append-only report directory (never overwrite an issued report) ----
+  # ---- one report id shared across every destination ----
   now <- utc_now()
-  dvr_id <- paste0(toupper(kind), "-", snapshot_id(now))
-  report_dir <- file.path(output_dir, dvr_id)
-  while (dir.exists(report_dir)) {
-    now <- now + 1L
-    dvr_id <- paste0(toupper(kind), "-", snapshot_id(now))
-    report_dir <- file.path(output_dir, dvr_id)
-  }
-  dir.create(report_dir, recursive = TRUE, showWarnings = FALSE)
+  id <- snapshot_id(now)
+  dvr_id <- paste0(toupper(kind), "-", id)
+  ver <- if (!is.null(version)) paste0("v", sub("^[vV]", "", as.character(version))) else NULL
+  base <- paste(Filter(nzchar, c(trial, toupper(kind), id, ver %||% "")), collapse = "_")
 
-  write_findings_readable(full,   file.path(report_dir, "findings_full"))
-  write_findings_readable(update, file.path(report_dir, "findings_update"))
-
-  # ---- site coverage (built from findings UNION data) ----
-  sites <- resolve_sites(full, snapshot, site_field = site_field)
-  no_site_count <- sum(is.na(sites) | !nzchar(sites))
-  site_note <- if (nrow(full) == 0L) "no findings"
-    else if (!any(vapply(snapshot, function(t) site_field %in% names(t), logical(1))))
-      paste0("no '", site_field, "' column in the snapshot: all ", nrow(full),
-             " finding(s) are unassigned to a site")
-    else paste0(no_site_count, " of ", nrow(full),
-                " finding(s) have a record with no site")
-
-  if (isTRUE(write_xlsx))
-    write_findings_xlsx(list(Full = full, Update = update),
-                        file.path(report_dir, "findings.xlsx"),
-                        sites = sites, per_site = per_site)
-
-  # ---- auditable, human-readable YAML manifest ----
-  current_sha <- snapshot_fingerprint(snapshot)
   versions <- list(
     bctu = tryCatch(as.character(utils::packageVersion("bctu")), error = function(e) NA_character_),
     r    = R.version.string)
+  snapshot_ref <- function(s) {
+    if (is.null(s)) return(NULL)
+    list(id = attr(s, "id") %||% NA_character_,
+         sha256 = tryCatch(snapshot_fingerprint(s), error = function(e) NA_character_))
+  }
   manifest <- list(
     schema = "bctu-dvr/1",
     kind = kind,
     dvr_id = dvr_id,
+    trial = trial,
+    version = version %||% NA_character_,
     created_utc = iso8601(now),
     operator = operator,
-    check = list(id = check$id, description = check$description, hash = chash),
-    current_snapshot = list(id = current_id, sha256 = current_sha),
-    baseline_snapshot = list(id = baseline_id, sha256 = baseline_sha,
-                             dvr_id = baseline_dvr_id),
-    baseline_decision = baseline_decision,
-    counts = as.list(counts),
-    full_count = nrow(full),
-    update_count = nrow(update),
-    site_field = site_field,
-    site_coverage = site_note,
-    findings_no_site = no_site_count,
+    compared = compared,
+    after_snapshot = snapshot_ref(after),
+    before_snapshot = snapshot_ref(before),
+    id_col = id_col,
+    site_col = site_col %||% NA_character_,
+    checks = check_summaries,
+    total_findings = total_rows,
     versions = versions
   )
-  yaml::write_yaml(manifest, file.path(report_dir, manifest_filename))
 
-  # ---- append the DVR-ledger record (this issued report is now the baseline
-  #      for the next one) ----
-  append_dvr_ledger(output_dir, kind, list(
-    dvr_id = dvr_id,
-    kind = kind,
-    check_id = check$id,
-    check_hash = chash,
-    snapshot_id = current_id,
-    snapshot_sha256 = current_sha,
-    baseline_snapshot_id = baseline_id,
-    baseline_dvr_id = baseline_dvr_id,
-    counts = as.list(counts),
-    operator = operator,
-    bctu_version = versions$bctu,
-    r_version = versions$r,
-    at = iso8601(now)
-  ))
+  written_dirs <- character(0)
+  for (p in paths) {
+    if (!dir.exists(p)) dir.create(p, recursive = TRUE, showWarnings = FALSE)
+    report_dir <- file.path(p, dvr_id)
+    suffix <- 0L
+    while (dir.exists(report_dir)) {
+      suffix <- suffix + 1L
+      report_dir <- file.path(p, paste0(dvr_id, "_", suffix))
+    }
+    dir.create(report_dir, recursive = TRUE, showWarnings = FALSE)
+
+    write_report_set(sheets, after, file.path(report_dir, "full"), base,
+                     id_col = id_col, site_col = site_col, write_xlsx = write_xlsx)
+    if (compared)
+      write_report_set(update_sheets, after, file.path(report_dir, "update"),
+                       paste0(base, "_Update"), id_col = id_col,
+                       site_col = site_col, write_xlsx = write_xlsx)
+    yaml::write_yaml(manifest, file.path(report_dir, manifest_filename))
+    written_dirs <- c(written_dirs, report_dir)
+  }
 
   if (verbose >= 1L) {
-    cli::cli_alert_success("{toupper(kind)} {.val {dvr_id}} issued -> {.file {report_dir}}")
-    cli::cli_alert_info("baseline: {baseline_decision}")
-    cli::cli_alert_info("full: {nrow(full)} | update: {nrow(update)} (new {counts[['new']]}, changed {counts[['changed']]}, resolved {counts[['resolved']]}); unchanged {counts[['unchanged']]}")
+    cli::cli_alert_success("{toupper(kind)} {.val {dvr_id}} issued -> {length(written_dirs)} location{?s}")
+    if (verbose >= 2L)
+      cli::cli_alert_info("{length(nonempty_checks(sheets))} check{?s} with findings, {total_rows} finding{?s}{if (compared) ' (compared to a before snapshot)' else ''}.")
   }
 
   invisible(list(
-    dvr_id = dvr_id, kind = kind, dir = report_dir,
-    current_snapshot_id = current_id, baseline_snapshot_id = baseline_id,
-    counts = counts, full = full, update = update, manifest = manifest))
+    dvr_id = dvr_id, kind = kind, trial = trial, dirs = written_dirs,
+    compared = compared, sheets = sheets, update = update_sheets,
+    checks = check_summaries, total_findings = total_rows, manifest = manifest))
 }

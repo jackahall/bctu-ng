@@ -2,11 +2,19 @@
 % Please edit documentation in R/checks.R
 \name{write_findings_readable}
 \alias{write_findings_readable}
-\title{Write a findings table as a readable CSV and a plain-text copy}
+\title{Write each check's findings as a readable CSV and plain-text copy}
 \usage{
-write_findings_readable(findings, path_no_ext)
+write_findings_readable(sheets, dir)
+}
+\arguments{
+\item{sheets}{A named list of findings data frames.}
+
+\item{dir}{Directory to write into (created if missing).}
+}
+\value{
+Invisibly, the directory.
 }
 \description{
-Write a findings table as a readable CSV and a plain-text copy
+One pair of files per check, named by the check. Gives a fully testable,
+Excel-free record of every finding.
 }
-\keyword{internal}

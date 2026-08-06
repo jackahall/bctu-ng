@@ -2,39 +2,48 @@
 % Please edit documentation in R/checks.R
 \name{save_cdi}
 \alias{save_cdi}
-\title{Build a Critical Data Items (CDI) report from a snapshot and a check}
+\title{Build a Critical Data Items (CDI) report from a DVP function and a snapshot}
 \usage{
 save_cdi(
-  snapshot,
-  check,
-  output_dir,
+  dvp,
+  after,
+  paths = getwd(),
+  id_col = "record_id",
+  site_col = NULL,
+  version = NULL,
   operator = NULL,
   write_xlsx = TRUE,
-  per_site = FALSE,
-  site_field = "site",
   verbose = 2L
 )
 }
 \arguments{
-\item{snapshot}{A saved \code{bctu_snapshot} (must carry \code{id} and \code{dir}).}
+\item{dvp}{A DVP function: \verb{function(data)} returning a named list of
+findings (see \code{\link[=run_dvp]{run_dvp()}}).}
 
-\item{check}{A \code{\link[=bctu_check]{bctu_check()}}.}
+\item{after}{The current snapshot the report is about.}
 
-\item{output_dir}{Directory to hold DVRs and the DVR ledger.}
+\item{paths}{One or more directories to receive the report (the report is
+written to each). Defaults to the working directory.}
+
+\item{id_col}{Record-id column used to map findings to sites. Default
+\code{"record_id"}.}
+
+\item{site_col}{Site column in the data; when \code{NULL} (default) no per-site
+split is written.}
+
+\item{version}{Optional DVP version string, recorded and added to file names.}
 
 \item{operator}{Person issuing the report (recorded); default the OS user.}
 
-\item{write_xlsx}{Also write an Excel workbook if \code{openxlsx} is available?}
-
-\item{per_site}{Write per-site sheets in the workbook?}
-
-\item{site_field}{Name of the site column in the data. Default \code{"site"}.}
+\item{write_xlsx}{Also write Excel workbooks if \code{openxlsx} is available?}
 
 \item{verbose}{Verbosity.}
 }
 \value{
-Invisibly, a list with the report id, paths, and per-class counts.
+Invisibly, a list with the report id, directories written, sheets,
+and per-check counts.
 }
 \description{
-Identical machinery to \code{\link[=save_dvr]{save_dvr()}} with its own ledger and file naming.
+Identical machinery to \code{\link[=save_dvr]{save_dvr()}} with its own label. A CDI has no update
+comparison, so \code{before} is not accepted.
 }

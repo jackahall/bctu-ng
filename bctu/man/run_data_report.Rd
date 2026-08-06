@@ -5,33 +5,44 @@
 \title{Shared engine behind \code{\link[=save_dvr]{save_dvr()}} and \code{\link[=save_cdi]{save_cdi()}}}
 \usage{
 run_data_report(
-  snapshot,
-  check,
-  output_dir,
+  dvp,
+  after,
+  before = NULL,
+  paths = getwd(),
   kind = c("dvr", "cdi"),
+  id_col = "record_id",
+  site_col = NULL,
+  version = NULL,
   operator = NULL,
   write_xlsx = TRUE,
-  per_site = FALSE,
-  site_field = "site",
   verbose = 2L
 )
 }
 \arguments{
-\item{snapshot}{A saved \code{bctu_snapshot} (must carry \code{id} and \code{dir}).}
+\item{dvp}{A DVP function: \verb{function(data)} returning a named list of
+findings (see \code{\link[=run_dvp]{run_dvp()}}).}
 
-\item{check}{A \code{\link[=bctu_check]{bctu_check()}}.}
+\item{after}{The current snapshot the report is about.}
 
-\item{output_dir}{Directory to hold DVRs and the DVR ledger.}
+\item{before}{Optional earlier snapshot to compare against; when \code{NULL} the
+report lists the current findings with no change labelling and no \verb{update/}.}
+
+\item{paths}{One or more directories to receive the report (the report is
+written to each). Defaults to the working directory.}
 
 \item{kind}{\code{"dvr"} or \code{"cdi"}.}
 
+\item{id_col}{Record-id column used to map findings to sites. Default
+\code{"record_id"}.}
+
+\item{site_col}{Site column in the data; when \code{NULL} (default) no per-site
+split is written.}
+
+\item{version}{Optional DVP version string, recorded and added to file names.}
+
 \item{operator}{Person issuing the report (recorded); default the OS user.}
 
-\item{write_xlsx}{Also write an Excel workbook if \code{openxlsx} is available?}
-
-\item{per_site}{Write per-site sheets in the workbook?}
-
-\item{site_field}{Name of the site column in the data. Default \code{"site"}.}
+\item{write_xlsx}{Also write Excel workbooks if \code{openxlsx} is available?}
 
 \item{verbose}{Verbosity.}
 }
@@ -40,5 +51,5 @@ Invisibly, a list describing the written report.
 }
 \description{
 Explicitly named (no hidden helper): the DVR and CDI wrappers differ only in
-their \code{kind} label, ledger file, and output naming.
+their \code{kind} label and whether an update comparison is offered.
 }
