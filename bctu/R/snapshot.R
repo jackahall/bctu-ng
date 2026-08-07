@@ -85,6 +85,66 @@ verify_ledger <- function(store = snapshot_store(verbose = 0L)) {
   }
   list(ok = TRUE, n = length(records))
 }
+
+# --- git provenance (metadata only; never fails a snapshot) -----------------
+#' @keywords internal
+git_available <- function() nzchar(Sys.which("git"))
+
+#' @keywords internal
+git_run <- function(root, args) {
+  # shQuote every argument: a commit message (or path) can contain spaces, which
+  # system2 would otherwise split into separate arguments.
+  res <- suppressWarnings(tryCatch(
+    system2("git", shQuote(c("-C", root, args)), stdout = TRUE, stderr = TRUE),
+    error = function(e) structure("", status = 1L)))
+  st <- attr(res, "status")
+  list(ok = is.null(st) || identical(as.integer(st), 0L), out = res)
+}
+
+#' @keywords internal
+git_root <- function(path) {
+  r <- git_run(path, c("rev-parse", "--show-toplevel"))
+  if (r$ok && length(r$out)) r$out[1L] else NA_character_
+}
+
+#' @keywords internal
+git_head <- function(root) {
+  r <- git_run(root, c("rev-parse", "HEAD"))
+  if (r$ok && length(r$out)) r$out[1L] else NA_character_
+}
+
+#' @keywords internal
+git_dirty <- function(root) {
+  r <- git_run(root, c("status", "--porcelain"))
+  isTRUE(r$ok) && any(nzchar(r$out))
+}
+
+#' Commit a snapshot's metadata (manifest + ledger) and annotate a tag
+#' @keywords internal
+commit_snapshot_metadata <- function(root, meta_files, id, tag = NULL, verbose = 1L) {
+  rels <- vapply(meta_files, function(f) relative_to(f, root), character(1))
+  if (!git_run(root, c("add", "--", rels))$ok) {
+    if (verbose >= 1L)
+      cli::cli_warn(c("Could not stage snapshot metadata for commit (is it git-ignored?).",
+                      "i" = "The snapshot itself was saved; only the git record was skipped."))
+    return(invisible(FALSE))
+  }
+  msg <- sprintf("snapshot %s%s", id, if (!is.null(tag)) paste0(" [", tag, "]") else "")
+  ci  <- git_run(root, c("commit", "-m", msg, "--", rels))
+  if (!ci$ok) {
+    if (verbose >= 1L)
+      cli::cli_warn(c("git commit of snapshot metadata failed.",
+                      "i" = paste(utils::tail(ci$out, 1L), collapse = " ")))
+    return(invisible(FALSE))
+  }
+  tagname <- paste0("snap/", tag %||% id)
+  tg <- git_run(root, c("tag", "-a", tagname, "-m", msg))
+  if (verbose >= 1L) {
+    if (tg$ok) cli::cli_alert_success("committed snapshot metadata and tagged {.val {tagname}}.")
+    else cli::cli_warn("Committed metadata, but tag {.val {tagname}} could not be created (it may already exist).")
+  }
+  invisible(TRUE)
+}
 #' @export
 print.bctu_snapshot <- function(x, ...) {
   m <- attr(x, "bctu_meta")
@@ -112,17 +172,19 @@ checkpoint <- function() {
 #'   values (`"dta"`, `"sas7bdat"`, `"xpt"`, `"sas"`) are written by
 #'   [save_snapshot()].
 #' @param tag Optional short tag for this extraction (e.g. `"DMC-2026-08"`),
-#'   recorded on the snapshot, its tables, the manifest and the audit ledger.
+#'   recorded on the snapshot, its tables, the manifest and the audit ledger, and
+#'   used to annotate the git tag.
 #' @param labels Optional named list of extra free-text metadata to record.
+#' @param git Git provenance mode; see [save_snapshot()].
 #' @param verbose Verbosity.
 #' @return The saved snapshot, with its `id` attached, invisibly.
 #' @export
 take_snapshot <- function(source, store = snapshot_store(create = TRUE),
                           formats = c("rds", "csv"), tag = NULL, labels = NULL,
-                          verbose = 2L) {
+                          git = NULL, verbose = 2L) {
   snap <- fetch_snapshot(source, verbose = verbose)
   save_snapshot(snap, store = store, formats = formats, tag = tag,
-                labels = labels, verbose = verbose)
+                labels = labels, git = git, verbose = verbose)
 }
 
 #' Save an in-memory snapshot to the store
@@ -132,12 +194,18 @@ take_snapshot <- function(source, store = snapshot_store(create = TRUE),
 #'   `"sas7bdat"`, `"xpt"`, `"sas"` (a SAS import script).
 #' @param tag Optional short extraction tag (see [take_snapshot()]).
 #' @param labels Optional named list of extra free-text metadata.
+#' @param git Git provenance: `"record"` writes the repo's HEAD SHA into the
+#'   manifest; `"commit"` also commits the metadata (manifest + ledger, never the
+#'   payload) and creates an annotated `snap/<tag-or-id>` tag; `"off"` skips git.
+#'   Default `NULL` = `"commit"` when a `tag` is given, else `"record"`. Never
+#'   fails a snapshot: if git is unavailable or the store is not in a repo, it is
+#'   silently skipped.
 #' @param verbose Verbosity.
 #' @return `x` with `id` attached, invisibly.
 #' @export
 save_snapshot <- function(x, store = snapshot_store(create = TRUE),
                           formats = c("rds", "csv"), tag = NULL, labels = NULL,
-                          verbose = 2L) {
+                          git = NULL, verbose = 2L) {
   if (!inherits(x, "bctu_snapshot")) cli::cli_abort("{.arg x} must be a {.cls bctu_snapshot}.")
   if (!is.null(tag) && (!is_string(tag) || !nzchar(trimws(tag))))
     cli::cli_abort("{.arg tag} must be a single non-empty string, or NULL.")
@@ -180,6 +248,24 @@ save_snapshot <- function(x, store = snapshot_store(create = TRUE),
     created_utc = iso8601(now), user = unname(Sys.info()[["user"]]),
     tables = lapply(tbl_meta, function(t) t$files$rds$sha256 %||% t$files$csv$sha256)
   )))
+
+  # Git provenance: record the code HEAD in the manifest, and (commit mode) commit
+  # the METADATA ONLY (manifest + ledger, never payload) and annotate a tag.
+  git_mode <- match.arg(git %||% if (!is.null(meta$tag)) "commit" else "record",
+                        c("record", "commit", "off"))
+  if (git_mode != "off" && git_available()) {
+    root <- git_root(store)
+    if (!is.na(root)) {
+      manifest$git_head  <- git_head(root)
+      manifest$git_dirty <- git_dirty(root)
+      tmp2 <- file.path(dir, paste0(manifest_filename, ".tmp"))
+      yaml::write_yaml(drop_null(manifest), tmp2)
+      file.rename(tmp2, file.path(dir, manifest_filename))
+      if (git_mode == "commit")
+        commit_snapshot_metadata(root, c(file.path(dir, manifest_filename), ledger_path(store)),
+                                 id, meta$tag, verbose)
+    }
+  }
 
   attr(x, "bctu_meta") <- meta
   attr(x, "id") <- id; attr(x, "dir") <- dir; attr(x, "bctu_tag") <- meta$tag

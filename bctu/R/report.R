@@ -257,11 +257,12 @@ build_report_manifest <- function(report, outputs, snapshot, template,
   snap_block <- list(id = NULL, sha256 = NULL, data_cut_date = NULL)
   if (inherits(snapshot, "bctu_snapshot")) {
     id <- attr(snapshot, "id")
-    snap_block <- list(
+    snap_block <- drop_null(list(
       id = id %||% "unsaved",
+      tag = attr(snapshot, "bctu_tag") %||% attr(snapshot, "bctu_meta")$tag,
       sha256 = tryCatch(snapshot_fingerprint(snapshot),
                         error = function(e) NA_character_),
-      data_cut_date = if (!is.null(id)) as.character(snapshot_date(id)) else NA_character_)
+      data_cut_date = if (!is.null(id)) as.character(snapshot_date(id)) else NA_character_))
   } else if (is_string(snapshot)) {
     snap_block <- list(
       id = snapshot, sha256 = NA_character_,

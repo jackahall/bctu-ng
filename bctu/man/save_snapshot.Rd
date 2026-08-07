@@ -10,6 +10,7 @@ save_snapshot(
   formats = c("rds", "csv"),
   tag = NULL,
   labels = NULL,
+  git = NULL,
   verbose = 2L
 )
 }
@@ -24,6 +25,13 @@ save_snapshot(
 \item{tag}{Optional short extraction tag (see \code{\link[=take_snapshot]{take_snapshot()}}).}
 
 \item{labels}{Optional named list of extra free-text metadata.}
+
+\item{git}{Git provenance: \code{"record"} writes the repo's HEAD SHA into the
+manifest; \code{"commit"} also commits the metadata (manifest + ledger, never the
+payload) and creates an annotated \verb{snap/<tag-or-id>} tag; \code{"off"} skips git.
+Default \code{NULL} = \code{"commit"} when a \code{tag} is given, else \code{"record"}. Never
+fails a snapshot: if git is unavailable or the store is not in a repo, it is
+silently skipped.}
 
 \item{verbose}{Verbosity.}
 }
