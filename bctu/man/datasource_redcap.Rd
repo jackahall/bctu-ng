@@ -9,6 +9,8 @@ datasource_redcap(
   url,
   report_id = NULL,
   labelled = TRUE,
+  missing_codes = NULL,
+  service = "bctu_api_token",
   name = NULL,
   ...
 )
@@ -26,6 +28,14 @@ instead of all records.}
 \item{labelled}{If \code{TRUE} (default), apply REDCap value labels (from the data
 dictionary) to coded fields using haven-style labelled vectors. Set \code{FALSE}
 to keep raw codes.}
+
+\item{missing_codes}{Optional \code{\link[=special_missing]{special_missing()}} mapping. When given, the
+named missing-data codes (e.g. \code{"UNK"}, \code{"OTH"}) are converted to native
+special missing values at extraction time and each column keeps its natural
+type, instead of the whole column coercing to character.}
+
+\item{service}{Keyring service for the token; default \code{"bctu_api_token"}. Set
+a per-project service to avoid sharing one keyring entry across trials.}
 
 \item{name}{Optional snapshot/label name; defaults to \code{"redcap"}.}
 
@@ -53,5 +63,5 @@ Datetimes are returned exactly as REDCap sends them (text); no timezone is
 guessed or applied.
 }
 \seealso{
-\code{\link[=datasource_sql]{datasource_sql()}}, \code{\link[=take_snapshot]{take_snapshot()}}
+\code{\link[=datasource_sql]{datasource_sql()}}, \code{\link[=special_missing]{special_missing()}}, \code{\link[=take_snapshot]{take_snapshot()}}
 }

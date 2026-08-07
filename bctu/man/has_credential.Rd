@@ -7,8 +7,12 @@
 has_credential(spec)
 }
 \arguments{
-\item{spec}{A \code{\link[=credential_spec]{credential_spec()}}.}
+\item{spec}{A \code{\link[=credential_spec]{credential_spec()}}, or \code{NULL}.}
+}
+\value{
+\code{TRUE} if the credential resolves to a non-empty secret.
 }
 \description{
-Is a credential resolvable? (shares the exact resolver, so it never disagrees)
+A read-only check: it never emits the keyring/env divergence warning that
+\code{\link[=resolve_credentials]{resolve_credentials()}} would (it runs quietly).
 }

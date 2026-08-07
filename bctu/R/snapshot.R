@@ -207,14 +207,59 @@ write_snapshot_payload <- function(tbl, tdir, stem, formats, base) {
   }
   if ("csv" %in% formats) {
     p <- file.path(tdir, paste0(stem, ".csv"))
-    utils::write.csv(csv_export_frame(tbl), p, row.names = FALSE, na = "")
+    utils::write.csv(restore_codes_frame(tbl), p, row.names = FALSE, na = "")
     files$csv <- file_entry(p, base)
+  }
+  if ("dta" %in% formats) {
+    p <- file.path(tdir, paste0(stem, ".dta"))
+    if (haven_write("dta", tbl, p)) files$dta <- file_entry(p, base)
+  }
+  if ("sas7bdat" %in% formats) {
+    p <- file.path(tdir, paste0(stem, ".sas7bdat"))
+    if (haven_write("sas7bdat", retag_upper(tbl), p)) files$sas7bdat <- file_entry(p, base)
+  }
+  if ("xpt" %in% formats) {
+    p <- file.path(tdir, paste0(stem, ".xpt"))
+    if (haven_write("xpt", retag_upper(tbl), p)) files$xpt <- file_entry(p, base)
+  }
+  if ("sas" %in% formats) {
+    # Reliable path: a SAS script that imports the CSV and applies special missings.
+    if (!"csv" %in% formats) {
+      pc <- file.path(tdir, paste0(stem, ".csv"))
+      utils::write.csv(restore_codes_frame(tbl), pc, row.names = FALSE, na = "")
+      files$csv <- file_entry(pc, base)
+    }
+    p <- file.path(tdir, paste0(stem, "_import.sas"))
+    writeLines(sas_import_script(tbl, paste0(stem, ".csv"), make_sas_name(stem)), p)
+    files$sas <- file_entry(p, base)
   }
   files
 }
 
+#' Best-effort haven writer (haven's SAS writers are unstable; never abort a save)
 #' @keywords internal
-csv_export_frame <- function(tbl) tbl
+haven_write <- function(kind, tbl, path) {
+  if (!requireNamespace("haven", quietly = TRUE)) {
+    cli::cli_warn("Package {.pkg haven} not installed; skipping the {.val {kind}} export.")
+    return(FALSE)
+  }
+  writer <- switch(kind, dta = haven::write_dta, sas7bdat = haven::write_sas,
+                   xpt = haven::write_xpt)
+  ok <- tryCatch({ suppressWarnings(writer(tbl, path)); TRUE },
+                 error = function(e) {
+                   cli::cli_warn(c("Could not write the {.val {kind}} export ({conditionMessage(e)}).",
+                                   "i" = "The rds/csv copies and any SAS import script are unaffected."))
+                   FALSE
+                 })
+  ok
+}
+
+#' @keywords internal
+make_sas_name <- function(stem) {
+  nm <- gsub("[^A-Za-z0-9_]", "_", stem)
+  if (nchar(nm) > 32L) nm <- substr(nm, 1L, 32L)
+  nm
+}
 
 #' @keywords internal
 file_entry <- function(path, base) {

@@ -115,4 +115,4 @@ P4 Docs + tests (PARALLEL) depends on P1/P2/P3 -> gate -> commit
 
 ## Status
 - [x] Branch created, plan written, haven verified.
-- [ ] P0  [ ] P1  [ ] P2  [ ] P3  [ ] P4
+- [x] P0  [ ] P1  [ ] P2  [ ] P3  [ ] P4

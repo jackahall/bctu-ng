@@ -43,17 +43,26 @@
 #' @param labelled If `TRUE` (default), apply REDCap value labels (from the data
 #'   dictionary) to coded fields using haven-style labelled vectors. Set `FALSE`
 #'   to keep raw codes.
+#' @param missing_codes Optional [special_missing()] mapping. When given, the
+#'   named missing-data codes (e.g. `"UNK"`, `"OTH"`) are converted to native
+#'   special missing values at extraction time and each column keeps its natural
+#'   type, instead of the whole column coercing to character.
+#' @param service Keyring service for the token; default `"bctu_api_token"`. Set
+#'   a per-project service to avoid sharing one keyring entry across trials.
 #' @param name Optional snapshot/label name; defaults to `"redcap"`.
 #' @param ... Extra REDCap API parameters passed on the record/report export
 #'   (e.g. `rawOrLabel`, `exportDataAccessGroups`, `filterLogic`).
 #' @return A `datasource` object.
-#' @seealso [datasource_sql()], [take_snapshot()]
+#' @seealso [datasource_sql()], [special_missing()], [take_snapshot()]
 #' @export
 datasource_redcap <- function(token_id, url, report_id = NULL, labelled = TRUE,
+                              missing_codes = NULL, service = "bctu_api_token",
                               name = NULL, ...) {
   if (!is_string(token_id)) cli::cli_abort("{.arg token_id} must be a single string.")
   if (!is_string(url)) cli::cli_abort("{.arg url} must be a single string (the REDCap API URL).")
-  creds <- credential_spec(token_id, expect_nchar = 32L)
+  if (!is.null(missing_codes) && !inherits(missing_codes, "bctu_special_missing"))
+    cli::cli_abort("{.arg missing_codes} must be a {.fn special_missing} mapping or NULL.")
+  creds <- credential_spec(token_id, service = service, expect_nchar = 32L)
   extra <- list(...)
 
   fetch <- function(creds, config, verbose = 2L, ...) {
@@ -65,8 +74,17 @@ datasource_redcap <- function(token_id, url, report_id = NULL, labelled = TRUE,
 
     req  <- redcap_request(config$url, token, content = content,
                            report_id = config$report_id, extra = config$extra)
-    resp <- httr2::req_perform(req)
-    records <- redcap_parse_records(httr2::resp_body_string(resp))
+    body <- redcap_perform(req, sprintf("REDCap %s export", content))
+
+    mapping <- config$missing_codes
+    records <- if (is.null(mapping))
+      redcap_parse_records(body)
+    else
+      apply_special_missing(redcap_read_csv(body, as_character = TRUE), mapping, verbose = verbose)
+
+    if (nrow(records) == 0L && verbose >= 1L)
+      cli::cli_warn(c("REDCap returned no records for {.val {config$name}}.",
+                      "i" = "Check the token, any filterLogic, and that the project has data."))
 
     dictionary  <- redcap_metadata(config$url, token)
     field_names <- redcap_field_names(config$url, token)
@@ -75,6 +93,7 @@ datasource_redcap <- function(token_id, url, report_id = NULL, labelled = TRUE,
 
     attr(records, "redcap_dictionary")  <- dictionary
     attr(records, "redcap_field_names") <- field_names
+    if (!is.null(mapping)) attr(records, "bctu_special_missing") <- mapping
 
     if (verbose >= 1L)
       cli::cli_alert_success("REDCap {content}: {nrow(records)} record{?s} x {ncol(records)} field{?s}.")
@@ -82,9 +101,44 @@ datasource_redcap <- function(token_id, url, report_id = NULL, labelled = TRUE,
   }
 
   config <- drop_null(list(url = url, report_id = report_id, labelled = labelled,
-                           token_id = token_id, extra = extra, name = name %||% "redcap"))
+                           missing_codes = missing_codes, token_id = token_id,
+                           extra = extra, name = name %||% "redcap"))
   new_datasource("redcap", fetch = fetch, creds = creds, config = config,
                  label = name %||% paste0("REDCap ", url))
+}
+
+#' Perform a REDCap request with a plain-English error and an error-body guard
+#'
+#' REDCap can return HTTP 200 with an error payload (e.g. a bad token) rather than
+#' a non-2xx status. This performs the request (requiring `httr2`), turns network
+#' failures into an actionable message, and rejects an error body so it can never
+#' be snapshotted as data.
+#' @param req An `httr2` request.
+#' @param what Short description for error messages.
+#' @return The response body as a string.
+#' @export
+redcap_perform <- function(req, what = "REDCap request") {
+  if (!requireNamespace("httr2", quietly = TRUE))
+    cli::cli_abort(c("Package {.pkg httr2} is required for REDCap access.",
+                     "i" = "Install it with {.code install.packages(\"httr2\")}."))
+  resp <- tryCatch(httr2::req_perform(req),
+                   error = function(e)
+                     cli::cli_abort(c("{what} failed to reach the server.",
+                                      "x" = conditionMessage(e),
+                                      "i" = "Check the API URL, your network, and any VPN.")))
+  body <- httr2::resp_body_string(resp)
+  redcap_guard_body(body, what)
+  body
+}
+
+#' @keywords internal
+redcap_guard_body <- function(body, what) {
+  head <- trimws(substr(body, 1L, 64L))
+  if (grepl('^\\{\\s*"error"', head) || grepl('^\\{\\s*\\047error\\047', head))
+    cli::cli_abort(c("{what} returned an error, not data.",
+                     "x" = substr(trimws(body), 1L, 200L),
+                     "i" = "Nothing was snapshotted. Check the token and permissions."))
+  invisible(body)
 }
 
 #' Build a REDCap API request (POST, x-www-form-urlencoded)
@@ -102,6 +156,9 @@ datasource_redcap <- function(token_id, url, report_id = NULL, labelled = TRUE,
 #' @export
 redcap_request <- function(url, token, content = "record", format = "csv",
                            report_id = NULL, extra = list()) {
+  if (!requireNamespace("httr2", quietly = TRUE))
+    cli::cli_abort(c("Package {.pkg httr2} is required for REDCap access.",
+                     "i" = "Install it with {.code install.packages(\"httr2\")}."))
   body <- list(token = token, content = content, format = format,
                type = "flat", returnFormat = "json")
   if (identical(content, "report")) {
@@ -122,8 +179,8 @@ redcap_request <- function(url, token, content = "record", format = "csv",
 #' @return A data frame (the data dictionary).
 #' @export
 redcap_metadata <- function(url, token) {
-  resp <- httr2::req_perform(redcap_request(url, token, content = "metadata"))
-  redcap_read_csv(httr2::resp_body_string(resp))
+  redcap_read_csv(redcap_perform(redcap_request(url, token, content = "metadata"),
+                                 "REDCap metadata export"))
 }
 
 #' Fetch and parse REDCap export field names (`content = "exportFieldNames"`)
@@ -132,8 +189,8 @@ redcap_metadata <- function(url, token) {
 #' @return A data frame mapping fields to exported column names.
 #' @export
 redcap_field_names <- function(url, token) {
-  resp <- httr2::req_perform(redcap_request(url, token, content = "exportFieldNames"))
-  redcap_read_csv(httr2::resp_body_string(resp))
+  redcap_read_csv(redcap_perform(redcap_request(url, token, content = "exportFieldNames"),
+                                 "REDCap field-names export"))
 }
 
 #' Parse a REDCap CSV records payload into a data frame
@@ -145,8 +202,11 @@ redcap_parse_records <- function(csv_text) {
 }
 
 #' @keywords internal
-redcap_read_csv <- function(csv_text) {
+redcap_read_csv <- function(csv_text, as_character = FALSE) {
   if (!nzchar(csv_text)) return(data.frame())
+  if (as_character)
+    return(utils::read.csv(text = csv_text, stringsAsFactors = FALSE,
+                           colClasses = "character", check.names = FALSE))
   if (requireNamespace("readr", quietly = TRUE))
     as.data.frame(readr::read_csv(I(csv_text), show_col_types = FALSE,
                                   na = character()))

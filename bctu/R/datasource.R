@@ -2,7 +2,7 @@
 # Data sources
 # ---------------------------------------------------------------------------
 # A datasource is created by composition: one base class plus a `fetch` closure.
-# Adding a source (REDCap, SQL, HTTP/morph, a simulated example) is a preset over
+# Adding a source (REDCap, SQL, a simulated example) is a preset over
 # `new_datasource()` -- no bespoke S3 method, no re-implemented take_snapshot.
 # `fetch` returns a NAMED LIST of data frames (one per table); single-table
 # sources return a one-element list. Snapshots are therefore multi-table by
@@ -98,11 +98,17 @@ resolve_credentials <- function(spec, verbose = 1L) {
 }
 
 #' Is a credential resolvable? (shares the exact resolver, so it never disagrees)
-#' @param spec A [credential_spec()].
+#'
+#' A read-only check: it never emits the keyring/env divergence warning that
+#' [resolve_credentials()] would (it runs quietly).
+#' @param spec A [credential_spec()], or `NULL`.
+#' @return `TRUE` if the credential resolves to a non-empty secret.
 #' @export
 has_credential <- function(spec) {
-  !is.null(tryCatch(resolve_credentials(structure(spec, class = "credential_spec")),
-                    error = function(e) NULL))
+  if (is.null(spec)) return(FALSE)
+  if (!inherits(spec, "credential_spec"))
+    cli::cli_abort("{.arg spec} must be a {.cls credential_spec} (see {.fn credential_spec}).")
+  !is.null(tryCatch(resolve_credentials(spec, verbose = 0L), error = function(e) NULL))
 }
 
 # ---------------------------------------------------------------------------
