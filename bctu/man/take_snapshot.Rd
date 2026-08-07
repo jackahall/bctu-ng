@@ -6,17 +6,26 @@
 \usage{
 take_snapshot(
   source,
-  store = snapshot_location(),
+  store = snapshot_store(create = TRUE),
   formats = c("rds", "csv"),
+  tag = NULL,
+  labels = NULL,
   verbose = 2L
 )
 }
 \arguments{
 \item{source}{A \link[readr:datasource]{datasource}.}
 
-\item{store}{Snapshot store directory; default resolved from the project.}
+\item{store}{Snapshot store directory; default resolved from the project marker.}
 
-\item{formats}{Payload formats to write; default \code{c("rds","csv")}.}
+\item{formats}{Payload formats to write; default \code{c("rds","csv")}. Other
+values (\code{"dta"}, \code{"sas7bdat"}, \code{"xpt"}, \code{"sas"}) are written by
+\code{\link[=save_snapshot]{save_snapshot()}}.}
+
+\item{tag}{Optional short tag for this extraction (e.g. \code{"DMC-2026-08"}),
+recorded on the snapshot, its tables, the manifest and the audit ledger.}
+
+\item{labels}{Optional named list of extra free-text metadata to record.}
 
 \item{verbose}{Verbosity.}
 }

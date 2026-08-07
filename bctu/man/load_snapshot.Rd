@@ -6,7 +6,7 @@
 \usage{
 load_snapshot(
   which = "latest",
-  store = snapshot_location(verbose = 0L),
+  store = snapshot_store(verbose = 0L),
   table = NULL,
   verbose = 2L
 )

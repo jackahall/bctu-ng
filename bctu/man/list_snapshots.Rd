@@ -4,7 +4,7 @@
 \alias{list_snapshots}
 \title{List snapshot ids in a store (newest last)}
 \usage{
-list_snapshots(store = snapshot_location(verbose = 0L))
+list_snapshots(store = snapshot_store(verbose = 0L))
 }
 \arguments{
 \item{store}{Snapshot store directory.}

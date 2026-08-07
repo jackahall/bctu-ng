@@ -4,17 +4,24 @@
 \alias{snapshot_store}
 \title{Resolve the snapshot store directory (absolute), and announce it}
 \usage{
-snapshot_store(start = getwd(), verbose = 1L)
+snapshot_store(start = getwd(), verbose = 1L, create = FALSE)
 }
 \arguments{
 \item{start}{Directory to search upward from; default the current directory.}
 
 \item{verbose}{If \verb{>= 1}, announce the resolved path and its source.}
+
+\item{create}{Create the store directory if it does not exist? Write paths
+pass \code{TRUE}; read/inspect paths leave it \code{FALSE} (no directory is created
+merely by resolving or listing).}
 }
 \value{
-The absolute snapshot store path (created if it does not exist).
+The absolute snapshot store path.
 }
 \description{
 The store is resolved RELATIVE TO THE PROJECT MARKER, never the working
-directory. Errors if no project is found (no fallback).
+directory. This is the single store resolver: it ERRORS if no
+\code{bctu-project.yml} is found (no silent working-directory fallback), so a
+snapshot can never be written somewhere unnoticed. Pass an explicit \verb{store=}
+to a snapshot function to write outside a project.
 }

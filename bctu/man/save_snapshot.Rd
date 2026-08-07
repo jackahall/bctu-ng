@@ -6,8 +6,10 @@
 \usage{
 save_snapshot(
   x,
-  store = snapshot_location(),
+  store = snapshot_store(create = TRUE),
   formats = c("rds", "csv"),
+  tag = NULL,
+  labels = NULL,
   verbose = 2L
 )
 }
@@ -16,7 +18,12 @@ save_snapshot(
 
 \item{store}{Snapshot store directory.}
 
-\item{formats}{Payload formats.}
+\item{formats}{Payload formats: any of \code{"rds"}, \code{"csv"}, \code{"dta"},
+\code{"sas7bdat"}, \code{"xpt"}, \code{"sas"} (a SAS import script).}
+
+\item{tag}{Optional short extraction tag (see \code{\link[=take_snapshot]{take_snapshot()}}).}
+
+\item{labels}{Optional named list of extra free-text metadata.}
 
 \item{verbose}{Verbosity.}
 }

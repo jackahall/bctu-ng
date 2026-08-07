@@ -7,7 +7,7 @@
 delete_snapshot(
   which,
   reason,
-  store = snapshot_location(verbose = 0L),
+  store = snapshot_store(verbose = 0L),
   mode = c("retire", "destroy"),
   verbose = 2L
 )

@@ -16,7 +16,7 @@
 
 utc_now <- function() as.POSIXct(Sys.time(), tz = "UTC")
 
-snapshot_id_regex <- "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z$"
+snapshot_id_regex <- "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z(-[0-9]{2})?$"
 
 #' Canonical snapshot identifier from a time
 #' @param time A `POSIXct` (or anything coercible); interpreted/rendered in UTC.
@@ -36,8 +36,9 @@ snapshot_id <- function(time = utc_now()) {
 parse_snapshot_id <- function(id) {
   if (!is.character(id) || length(id) != 1L || !grepl(snapshot_id_regex, id))
     cli::cli_abort(c("Invalid snapshot id: {.val {id}}",
-                     "i" = "Expected {.code YYYY-MM-DDTHHMMSSZ} (UTC)."))
-  t <- as.POSIXct(strptime(id, "%Y-%m-%dT%H%M%SZ", tz = "UTC"), tz = "UTC")
+                     "i" = "Expected {.code YYYY-MM-DDTHHMMSSZ} (UTC), optionally with a {.code -NN} suffix."))
+  base_id <- sub("-[0-9]{2}$", "", id)
+  t <- as.POSIXct(strptime(base_id, "%Y-%m-%dT%H%M%SZ", tz = "UTC"), tz = "UTC")
   if (is.na(t)) cli::cli_abort("Snapshot id {.val {id}} is not a real UTC time.")
   t
 }
@@ -71,6 +72,12 @@ snapshot_date <- function(x, tz = "Europe/London") {
 #' @keywords internal
 sha256_file <- function(path) {
   as.character(digest::digest(file = path, algo = "sha256"))
+}
+
+#' SHA-256 of an R object's serialised value
+#' @keywords internal
+sha256_object <- function(x) {
+  as.character(digest::digest(x, algo = "sha256", serialize = TRUE))
 }
 
 # ---------------------------------------------------------------------------

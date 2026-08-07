@@ -66,14 +66,25 @@ bctu_project <- function(start = getwd()) {
       "i" = "Run {.code bctu_init_project(<name>)} at the trial root first.",
       "x" = "bctu refuses to guess a location: nothing was read or written."
     ))
-  cfg <- yaml::read_yaml(file)
+  cfg <- tryCatch(yaml::read_yaml(file), error = function(e)
+    cli::cli_abort(c("The project marker {.file {file}} is not valid YAML.",
+                     "i" = "Fix the YAML (check indentation and colons), then retry.",
+                     "x" = conditionMessage(e))))
   if (is.null(cfg$bctu_project))
     cli::cli_abort("{.file {file}} is missing the required {.field bctu_project} field.")
+  name  <- cfg$bctu_project
+  store <- cfg$snapshot_store %||% "Data/Snapshots"
+  if (!is_string(name) || is.na(name) || !nzchar(trimws(name)))
+    cli::cli_abort(c("{.field bctu_project} in {.file {file}} must be a single non-empty name.",
+                     "i" = "Set e.g. {.code bctu_project: OCeAN}."))
+  if (!is_string(store) || is.na(store) || !nzchar(trimws(store)))
+    cli::cli_abort(c("{.field snapshot_store} in {.file {file}} must be a single non-empty path.",
+                     "i" = "Set e.g. {.code snapshot_store: Data/Snapshots}, or remove the field to use the default."))
   list(
-    name  = cfg$bctu_project,
+    name  = name,
     file  = file,
     root  = dirname(file),
-    snapshot_store = cfg$snapshot_store %||% "Data/Snapshots",
+    snapshot_store = store,
     raw   = cfg
   )
 }
@@ -81,51 +92,31 @@ bctu_project <- function(start = getwd()) {
 #' Resolve the snapshot store directory (absolute), and announce it
 #'
 #' The store is resolved RELATIVE TO THE PROJECT MARKER, never the working
-#' directory. Errors if no project is found (no fallback).
+#' directory. This is the single store resolver: it ERRORS if no
+#' `bctu-project.yml` is found (no silent working-directory fallback), so a
+#' snapshot can never be written somewhere unnoticed. Pass an explicit `store=`
+#' to a snapshot function to write outside a project.
 #' @param start Directory to search upward from; default the current directory.
 #' @param verbose If `>= 1`, announce the resolved path and its source.
-#' @return The absolute snapshot store path (created if it does not exist).
+#' @param create Create the store directory if it does not exist? Write paths
+#'   pass `TRUE`; read/inspect paths leave it `FALSE` (no directory is created
+#'   merely by resolving or listing).
+#' @return The absolute snapshot store path.
 #' @export
-snapshot_store <- function(start = getwd(), verbose = 1L) {
+snapshot_store <- function(start = getwd(), verbose = 1L, create = FALSE) {
   p <- bctu_project(start)
   store <- p$snapshot_store
   store <- if (is_absolute_path(store)) store else file.path(p$root, store)
   store <- normalize_path_lenient(store)
-  if (!dir.exists(store)) dir.create(store, recursive = TRUE, showWarnings = FALSE)
+  if (create && !dir.exists(store)) {
+    dir.create(store, recursive = TRUE, showWarnings = FALSE)
+    if (!dir.exists(store))
+      cli::cli_abort(c("Could not create the snapshot store {.file {store}}.",
+                       "i" = "Check the path and directory permissions."))
+  }
   if (verbose >= 1L)
     cli::cli_alert_info("snapshot store: {.file {store}}  (from {.file {p$file}})")
   store
-}
-
-#' Resolve where snapshots are saved, falling back to the working directory
-#'
-#' Unlike [snapshot_store()], which requires a `bctu-project.yml` marker and
-#' errors when none is found, this resolver falls back to the working directory
-#' so snapshots can be taken outside a project. The chosen location is ALWAYS
-#' announced, so it is never a silent guess.
-#'
-#' If a project marker is found by walking up from `start`, the project's
-#' snapshot store is used and announced with its source marker. Otherwise the
-#' current working directory is used and announced, with a hint to run
-#' [bctu_init_project()] or pass `store=` to change it.
-#' @param start Directory to search upward from for a project marker; default
-#'   the current directory.
-#' @param verbose If `>= 1`, announce the resolved location and its source.
-#' @return The absolute directory where snapshots are read and written.
-#' @export
-snapshot_location <- function(start = getwd(), verbose = 1L) {
-  marker <- find_project_marker(start)
-  if (!is.na(marker)) {
-    store <- snapshot_store(start, verbose = 0L)
-    if (verbose >= 1L)
-      cli::cli_alert_info("snapshot store: {.file {store}}  (from {.file {marker}})")
-    return(store)
-  }
-  here <- normalize_path_lenient(getwd())
-  if (verbose >= 1L)
-    cli::cli_alert_info(
-      "No bctu project found; saving snapshots in the working directory: {.file {getwd()}}. Run bctu_init_project() or pass store= to change this.")
-  here
 }
 
 #' Print the fully resolved configuration (for operators and auditors)

@@ -12,10 +12,28 @@ test_that("snapshot_store resolves relative to the marker and creates the dir", 
   proj <- withr::local_tempdir()
   bctu_init_project("EXAMPLE", dir = proj)
 
-  store <- snapshot_store(proj, verbose = 0L)
+  store <- snapshot_store(proj, verbose = 0L, create = TRUE)
   expect_equal(normalizePath(store),
                normalizePath(file.path(proj, "Data", "Snapshots")))
   expect_true(dir.exists(store))
+})
+
+test_that("snapshot_store does not create the directory when resolving only", {
+  proj <- withr::local_tempdir()
+  bctu_init_project("EXAMPLE", dir = proj)
+  store <- snapshot_store(proj, verbose = 0L)          # create = FALSE
+  expect_false(dir.exists(store))
+})
+
+test_that("snapshot_store errors (no silent cwd fallback) when there is no marker", {
+  empty <- withr::local_tempdir()
+  expect_error(snapshot_store(empty, verbose = 0L), "bctu-project|No ")
+})
+
+test_that("a malformed marker gives a plain-English error", {
+  proj <- withr::local_tempdir()
+  writeLines("bctu_project: [a, b]", file.path(proj, "bctu-project.yml"))
+  expect_error(bctu_project(proj), "must be a single non-empty name")
 })
 
 test_that("a marker found in a parent directory resolves from a child", {

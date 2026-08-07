@@ -39,22 +39,37 @@ test_that("the manifest is readable YAML carrying a sha256 per table", {
   expect_true(is.character(sha) && length(sha) == 1L && nchar(sha) == 64L)
 })
 
-test_that("with no project, snapshots save in the working directory and load back", {
+test_that("with no project and no explicit store, take_snapshot errors (never guesses a location)", {
   wd <- withr::local_tempdir()
   withr::local_dir(wd)
-
-  expect_message(
-    snap <- take_snapshot(datasource_example("redcap", n = 5L, seed = 1L)),
-    "working directory"
+  expect_error(
+    take_snapshot(datasource_example("redcap", n = 5L, seed = 1L)),
+    "bctu-project|No "
   )
-  id <- attr(snap, "id")
+})
 
-  expect_true(dir.exists(file.path(wd, id, "tables", "records")))
-  expect_equal(list_snapshots(), id)
+test_that("the append-only ledger records takes and deletes, and its hash chain verifies", {
+  store <- withr::local_tempdir()
+  s1 <- take_snapshot(datasource_example("redcap", n = 5L, seed = 1L), store = store, verbose = 0L)
+  s2 <- take_snapshot(datasource_example("redcap", n = 6L, seed = 2L), store = store, verbose = 0L)
+  led <- read_ledger(store)
+  expect_length(led, 2L)
+  expect_equal(vapply(led, function(r) r$event, ""), c("take", "take"))
+  expect_true(verify_ledger(store)$ok)
 
-  loaded <- load_snapshot(verbose = 0L)
-  expect_s3_class(loaded, "bctu_snapshot")
-  expect_equal(nrow(loaded$records), 5L)
+  delete_snapshot(attr(s2, "id"), reason = "test", store = store, mode = "destroy", verbose = 0L)
+  led2 <- read_ledger(store)
+  expect_equal(led2[[3]]$event, "destroy")
+  expect_equal(led2[[3]]$reason, "test")
+  expect_true(verify_ledger(store)$ok)
+})
+
+test_that("unsafe table names are rejected", {
+  store <- withr::local_tempdir()
+  snap <- structure(list(`../evil` = data.frame(a = 1)),
+                    class = c("bctu_snapshot", "list"),
+                    bctu_meta = list(name = "X"))
+  expect_error(save_snapshot(snap, store = store, verbose = 0L), "Unsafe table name")
 })
 
 test_that("delete_snapshot retires by default, keeping the manifest and a deletion note", {
