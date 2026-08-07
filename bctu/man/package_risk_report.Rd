@@ -22,6 +22,6 @@ dependencies and returns a tidy risk summary. bctu does not recreate
 }
 \details{
 Dependency risk is validation layer (c). Formal validation of bctu itself is
-layer (b), done with \code{valtools} at release time. The installation IQ/OQ is
+layer (b), done with \code{valtools} at release time. The installation IQ is
 layer (a), \code{\link[=check_setup]{check_setup()}}.
 }

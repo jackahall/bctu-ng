@@ -29,6 +29,7 @@ Suggests:
     tinytex,
     riskmetric,
     tibble,
+    renv,
     sessioninfo
 Config/testthat/edition: 3
 Roxygen: list(markdown = TRUE)

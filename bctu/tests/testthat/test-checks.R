@@ -143,3 +143,61 @@ test_that("save_dvr splits per site plus overall when site_col is given", {
   expect_true(dir.exists(file.path(full, "sites", "Site_A")))
   expect_true(dir.exists(file.path(full, "sites", "Site_B")))
 })
+
+test_that("a resolved finding whose record was removed from after is still sited from before", {
+  out_dir <- withr::local_tempdir()
+
+  before <- list(records = data.frame(
+    record_id = c("E001", "E002"), site = c("Site_A", "Site_B"),
+    stringsAsFactors = FALSE))
+  after <- list(records = data.frame(
+    record_id = "E002", site = "Site_B", stringsAsFactors = FALSE))  # E001 withdrawn
+
+  dvp <- function(data) list(demo = data.frame(
+    record_id = data$records$record_id, note = "issue", stringsAsFactors = FALSE))
+
+  res <- save_dvr(dvp, after = after, before = before, paths = out_dir,
+                  id_col = "record_id", site_col = "site",
+                  write_xlsx = FALSE, verbose = 0L)
+
+  full <- file.path(res$dirs[[1]], "full")
+  site_a_csv <- file.path(full, "sites", "Site_A", "demo.csv")
+  expect_true(file.exists(site_a_csv))
+  rows <- utils::read.csv(site_a_csv, stringsAsFactors = FALSE)
+  expect_true("E001" %in% rows$record_id)
+  expect_false(dir.exists(file.path(full, "sites", "NO_SITE")))
+})
+
+test_that("write_findings_readable de-duplicates filenames that sanitise to the same stem", {
+  dir <- withr::local_tempdir()
+  sheets <- list(
+    `a/b` = data.frame(x = 1L),
+    `a b` = data.frame(x = 2L))
+
+  write_findings_readable(sheets, dir)
+
+  csvs <- sort(list.files(dir, pattern = "\\.csv$"))
+  expect_length(csvs, 2L)
+  first  <- utils::read.csv(file.path(dir, csvs[1]))
+  second <- utils::read.csv(file.path(dir, csvs[2]))
+  expect_false(identical(first$x, second$x))
+})
+
+test_that("finding_row_keys distinguishes a genuine NA from the literal string \"NA\"", {
+  df <- data.frame(value = c(NA_character_, "NA"), stringsAsFactors = FALSE)
+  keys <- finding_row_keys(df)
+  expect_false(keys[1] == keys[2])
+})
+
+test_that("write_report_set warns per check with findings that cannot be mapped to a site", {
+  dir <- withr::local_tempdir()
+  snapshot <- list(records = data.frame(
+    record_id = "E001", site = "Site_A", stringsAsFactors = FALSE))
+  sheets <- list(demo = data.frame(
+    record_id = "E999", note = "orphan", stringsAsFactors = FALSE))  # not in snapshot
+
+  expect_warning(
+    write_report_set(sheets, snapshot, dir, "base", id_col = "record_id",
+                     site_col = "site", write_xlsx = FALSE),
+    "could not be mapped to a site")
+})

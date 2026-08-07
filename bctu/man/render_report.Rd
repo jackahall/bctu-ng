@@ -22,10 +22,15 @@ render_report(
 \item{formats}{Output formats: any of \code{"docx"}, \code{"pdf"}. Default both.}
 
 \item{snapshot}{Optional \code{bctu_snapshot} (or a snapshot id string) the report
-is built from; recorded in the manifest for provenance.}
+is built from; recorded in the manifest for provenance. The manifest's
+\code{data_cut_date} is derived from the snapshot id's creation timestamp, not
+from any clinical data-cut field; it only coincides with the true clinical
+data-cut date if the snapshot was taken at the cut.}
 
 \item{template}{Optional path to a Word reference document (\code{.docx}) used for
-DOCX styling; its identity and SHA-256 are recorded.}
+DOCX styling; its identity and SHA-256 are recorded. Applies to the DOCX
+output only; it is ignored (but still hashed into the manifest) when
+rendering PDF.}
 
 \item{extra_destinations}{Optional character vector of directories to also
 copy the whole rendered bundle into.}

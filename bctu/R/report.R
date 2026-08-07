@@ -109,9 +109,14 @@ print.bctu_report <- function(x, ...) {
 #' @param output_dir Directory to render into (created if needed).
 #' @param formats Output formats: any of `"docx"`, `"pdf"`. Default both.
 #' @param snapshot Optional `bctu_snapshot` (or a snapshot id string) the report
-#'   is built from; recorded in the manifest for provenance.
+#'   is built from; recorded in the manifest for provenance. The manifest's
+#'   `data_cut_date` is derived from the snapshot id's creation timestamp, not
+#'   from any clinical data-cut field; it only coincides with the true clinical
+#'   data-cut date if the snapshot was taken at the cut.
 #' @param template Optional path to a Word reference document (`.docx`) used for
-#'   DOCX styling; its identity and SHA-256 are recorded.
+#'   DOCX styling; its identity and SHA-256 are recorded. Applies to the DOCX
+#'   output only; it is ignored (but still hashed into the manifest) when
+#'   rendering PDF.
 #' @param extra_destinations Optional character vector of directories to also
 #'   copy the whole rendered bundle into.
 #' @param verbose Verbosity.
@@ -125,11 +130,14 @@ render_report <- function(report, output_dir,
                           verbose = 2L) {
   if (!inherits(report, "bctu_report"))
     cli::cli_abort("{.arg report} must be a {.cls bctu_report}.")
-  formats <- match.arg(formats, c("docx", "pdf"), several.ok = TRUE)
+  formats <- unique(match.arg(formats, c("docx", "pdf"), several.ok = TRUE))
   pandoc <- Sys.which("pandoc")
   if (!nzchar(pandoc))
     cli::cli_abort(c("pandoc was not found on the PATH.",
                      "i" = "Install pandoc to render reports."))
+  if ("pdf" %in% formats && !nzchar(Sys.which("xelatex")))
+    cli::cli_abort(c("xelatex was not found on the PATH.",
+                     "i" = "PDF rendering needs a LaTeX installation providing xelatex, for example TinyTeX: run tinytex::install_tinytex()."))
   if (!is.null(template) && !file.exists(template))
     cli::cli_abort("Reference document not found: {.file {template}}.")
 
@@ -151,7 +159,7 @@ render_report <- function(report, output_dir,
   start <- Sys.time()
   for (fmt in formats) {
     md_path <- file.path(work, paste0(base_name, "-", fmt, ".md"))
-    writeLines(build_report_markdown(report, fmt, work), md_path)
+    writeLines(enc2utf8(build_report_markdown(report, fmt, work)), md_path, useBytes = TRUE)
     out_path <- file.path(output_dir, paste0(base_name, ".", fmt))
     run_pandoc(pandoc, md_path, out_path, fmt, template)
     if (!file.exists(out_path) || file.info(out_path)$size == 0)
@@ -240,7 +248,9 @@ render_figure_section <- function(fig, assets_dir, index) {
       cli::cli_abort("Saving a plot needs the {.pkg ggplot2} package.")
     ggplot2::ggsave(path, plot = fig$plot, width = 6, height = 4, dpi = fig$dpi)
   } else {
-    dest <- file.path(assets_dir, basename(path))
+    # prefix with the section index so two figures with the same basename
+    # from different source directories cannot overwrite one another
+    dest <- file.path(assets_dir, paste0("figure-", index, "-", basename(path)))
     file.copy(path, dest, overwrite = TRUE)
     path <- dest
   }

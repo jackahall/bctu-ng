@@ -15,5 +15,7 @@ A character vector of one key per row (empty for a zero-row frame).
 \description{
 Joins every column of each row into one string, so two findings are the same
 only when their entire rows match. Findings are free-form, so identity is the
-whole row and nothing is assumed about column names.
+whole row and nothing is assumed about column names. A genuine \code{NA} is
+encoded with a reserved control character, distinct from the literal string
+\code{"NA"}, so the two can never collide in the key.
 }

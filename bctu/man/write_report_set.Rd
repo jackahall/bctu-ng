@@ -2,7 +2,7 @@
 % Please edit documentation in R/checks.R
 \name{write_report_set}
 \alias{write_report_set}
-\title{Write one report set: an overall workbook plus (optionally) per-site workbooks}
+\title{Write one report set: an overall workbook plus (optionally) per-site output}
 \usage{
 write_report_set(
   sheets,
@@ -11,7 +11,8 @@ write_report_set(
   base_name,
   id_col = "record_id",
   site_col = NULL,
-  write_xlsx = TRUE
+  write_xlsx = TRUE,
+  before_snapshot = NULL
 )
 }
 \arguments{
@@ -27,6 +28,9 @@ write_report_set(
 writes the overall workbook only.}
 
 \item{write_xlsx}{Write Excel workbooks (needs \code{openxlsx})?}
+
+\item{before_snapshot}{Optional earlier snapshot, unioned with \code{snapshot}
+for site lookup (see \code{\link[=resolve_finding_sites]{resolve_finding_sites()}}).}
 }
 \value{
 Invisibly, the directory.
@@ -34,6 +38,11 @@ Invisibly, the directory.
 \description{
 Writes the readable CSV/TXT copies and, when \code{write_xlsx}, an overall
 workbook of all findings. When \code{site_col} is given, each finding is assigned
-a site from the snapshot and a per-site workbook is written under \verb{sites/},
-so a centre receives only its own queries alongside the overall set.
+a site and a per-site CSV/TXT pair (plus, when \code{write_xlsx}, a per-site
+workbook) is written under \verb{sites/}, so a centre receives only its own
+queries alongside the overall set; this per-site split does not require
+\code{openxlsx}. Sites are resolved from \code{snapshot}, and from \code{before_snapshot}
+too when given, so a \code{resolved} finding whose record was removed from
+\code{snapshot} is still sited correctly. A \code{cli_warn} is raised per check that
+has findings with no resolvable site.
 }

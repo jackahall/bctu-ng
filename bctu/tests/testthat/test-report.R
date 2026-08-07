@@ -71,3 +71,48 @@ test_that("render_report writes a docx bundle with a provenance manifest", {
   expect_false(is.null(man$outputs$docx$sha256))
   expect_equal(man$snapshot$id, attr(snap, "id"))
 })
+
+test_that("render_table_markdown escapes pipe and newline so the grid table stays structurally valid", {
+  df <- data.frame(id = 1:2,
+                   note = c("has|pipe", "line1\nline2"),
+                   stringsAsFactors = FALSE)
+  rt <- report_table(df)
+  md <- render_table_markdown(rt)
+
+  # the literal pipe is escaped, not left to look like a column boundary
+  expect_match(md, "has\\|pipe", fixed = TRUE)
+  # the embedded newline is collapsed so the row stays on one grid-table line
+  expect_false(grepl("line1\nline2", md, fixed = TRUE))
+  expect_match(md, "line1 line2", fixed = TRUE)
+
+  # every content line has the same number of (unescaped) "|" as a border
+  # line has "+", i.e. no cell content introduced a spurious column
+  lines <- strsplit(md, "\n")[[1]]
+  content_lines <- lines[startsWith(lines, "|")]
+  border_lines  <- lines[startsWith(lines, "+")]
+  n_pipes   <- lengths(regmatches(content_lines, gregexpr("(?<!\\\\)\\|", content_lines, perl = TRUE)))
+  n_borders <- lengths(regmatches(border_lines, gregexpr("\\+", border_lines)))
+  expect_true(all(n_pipes == n_borders[1]))
+})
+
+test_that("latex_escape and render_table_latex escape a literal backslash exactly once", {
+  expect_equal(bctu:::latex_escape("a\\b"), "a\\textbackslash{}b")
+
+  df <- data.frame(path = "C:\\Users\\Data", stringsAsFactors = FALSE)
+  rt  <- report_table(df)
+  tex <- render_table_latex(rt)
+  expect_match(tex, "C:\\textbackslash{}Users\\textbackslash{}Data", fixed = TRUE)
+  # the braces textbackslash{} introduces must not be re-escaped
+  expect_false(grepl("textbackslash\\{", tex, fixed = TRUE))
+})
+
+test_that("render_table_markdown renders a structurally valid table for zero rows", {
+  df <- data.frame(id = integer(0), note = character(0), stringsAsFactors = FALSE)
+  rt <- report_table(df)
+  md <- render_table_markdown(rt)
+
+  lines <- strsplit(md, "\n")[[1]]
+  expect_true(length(lines) >= 4)
+  expect_true(startsWith(lines[1], "+"))
+  expect_true(startsWith(lines[length(lines)], "+"))
+})

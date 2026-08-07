@@ -206,30 +206,37 @@ render_table_markdown <- function(x) {
   if (!inherits(x, "bctu_report_table"))
     cli::cli_abort("{.arg x} must be a {.cls bctu_report_table}.")
   body   <- report_table_display_body(x)
-  labels <- x$columns$label
+  body[] <- vapply(as.vector(body), escape_grid_text, character(1))
+  labels <- vapply(x$columns$label, escape_grid_text, character(1), USE.NAMES = FALSE)
   aligns <- x$columns$align
   n_col  <- ncol(body)
+  group_headers <- x$group_headers
+  if (!is.null(group_headers))
+    group_headers$label <- vapply(group_headers$label, escape_grid_text, character(1), USE.NAMES = FALSE)
+  banner_rows <- x$banner_rows
+  if (!is.null(banner_rows))
+    banner_rows$label <- vapply(banner_rows$label, escape_grid_text, character(1), USE.NAMES = FALSE)
 
   widths <- vapply(seq_len(n_col), function(j)
     max(nchar(labels[j]), if (nrow(body)) max(nchar(body[, j])) else 0L, 1L),
     integer(1))
 
   # widen for spanning group headers so their label always fits
-  if (!is.null(x$group_headers)) {
+  if (!is.null(group_headers)) {
     start <- 1L
-    for (i in seq_len(nrow(x$group_headers))) {
-      span <- x$group_headers$span[i]
+    for (i in seq_len(nrow(group_headers))) {
+      span <- group_headers$span[i]
       cols <- start:(start + span - 1L)
       inner <- sum(widths[cols]) + 3L * span - 3L
-      deficit <- nchar(x$group_headers$label[i]) - inner
+      deficit <- nchar(group_headers$label[i]) - inner
       if (deficit > 0L) widths[cols[span]] <- widths[cols[span]] + deficit
       start <- start + span
     }
   }
   # widen for full-width banner rows
-  if (!is.null(x$banner_rows)) {
+  if (!is.null(banner_rows)) {
     inner_all <- sum(widths) + 3L * n_col - 3L
-    deficit <- max(nchar(x$banner_rows$label)) - inner_all
+    deficit <- max(nchar(banner_rows$label)) - inner_all
     if (deficit > 0L) widths[n_col] <- widths[n_col] + deficit
   }
 
@@ -237,9 +244,9 @@ render_table_markdown <- function(x) {
   add <- function(...) lines <<- c(lines, ...)
 
   add(grid_border_line(widths, "-"))
-  if (!is.null(x$group_headers)) {
+  if (!is.null(group_headers)) {
     segs <- Map(function(l, s) list(text = l, span = s, align = "center"),
-                x$group_headers$label, x$group_headers$span)
+                group_headers$label, group_headers$span)
     add(grid_content_line(segs, widths))
     add(grid_border_line(widths, "-"))
   }
@@ -247,27 +254,35 @@ render_table_markdown <- function(x) {
   add(grid_content_line(header_segs, widths))
   add(grid_border_line(widths, "=", aligns))
 
-  banner_after <- if (is.null(x$banner_rows)) integer(0) else x$banner_rows$after
+  banner_after <- if (is.null(banner_rows)) integer(0) else banner_rows$after
   emit_banners <- function(after_row) {
     idx <- which(banner_after == after_row)
     for (k in idx) {
-      add(grid_content_line(list(list(text = x$banner_rows$label[k],
+      add(grid_content_line(list(list(text = banner_rows$label[k],
                                       span = n_col, align = "left")), widths))
       add(grid_border_line(widths, "-"))
     }
   }
   emit_banners(0L)
-  for (r in seq_len(nrow(body))) {
-    row_segs <- Map(function(v, a) list(text = v, span = 1L, align = a),
-                    body[r, ], aligns)
-    add(grid_content_line(row_segs, widths))
+  if (nrow(body) == 0L) {
+    # no data rows: emit one blank body row so the grid table keeps a valid
+    # header/body/closing-border structure instead of ending at the "=" line
+    blank_segs <- Map(function(a) list(text = "", span = 1L, align = a), aligns)
+    add(grid_content_line(blank_segs, widths))
     add(grid_border_line(widths, "-"))
-    emit_banners(r)
+  } else {
+    for (r in seq_len(nrow(body))) {
+      row_segs <- Map(function(v, a) list(text = v, span = 1L, align = a),
+                      body[r, ], aligns)
+      add(grid_content_line(row_segs, widths))
+      add(grid_border_line(widths, "-"))
+      emit_banners(r)
+    }
   }
 
   table <- paste(lines, collapse = "\n")
   if (!is.null(x$caption))
-    table <- paste0(table, "\n\nTable: ", x$caption)
+    table <- paste0(table, "\n\nTable: ", escape_grid_text(x$caption))
   table
 }
 
@@ -290,6 +305,18 @@ grid_border_line <- function(widths, char, aligns = NULL) {
     seg
   }, character(1))
   paste0("+", paste(segs, collapse = "+"), "+")
+}
+
+#' Escape characters that would corrupt pandoc grid-table structure
+#'
+#' Collapses embedded newlines to a space (a raw newline would split a cell
+#' across grid-table lines without a border) and backslash-escapes "|" (a
+#' literal pipe inside a cell would read as a spurious column boundary).
+#' @keywords internal
+escape_grid_text <- function(text) {
+  text <- as.character(text)
+  text <- gsub("\r\n|\r|\n", " ", text)
+  gsub("|", "\\|", text, fixed = TRUE)
 }
 
 #' A grid-table content line, supporting cells that span several columns
@@ -376,9 +403,13 @@ render_table_latex <- function(x) {
 #' @keywords internal
 latex_escape <- function(s) {
   s <- as.character(s)
-  s <- gsub("\\\\", "\\\\textbackslash{}", s)
+  # stand a backslash in for every literal "\" first, so the brace pass below
+  # does not re-escape the "{" and "}" that \textbackslash{} would introduce
+  token <- "\x01BCTUBACKSLASHTOKEN\x01"
+  s <- gsub("\\\\", token, s)
   s <- gsub("([&%$#_{}])", "\\\\\\1", s)
   s <- gsub("~", "\\\\textasciitilde{}", s)
   s <- gsub("\\^", "\\\\textasciicircum{}", s)
+  s <- gsub(token, "\\textbackslash{}", s, fixed = TRUE)
   s
 }

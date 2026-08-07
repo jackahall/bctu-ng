@@ -134,10 +134,12 @@ redcap_perform <- function(req, what = "REDCap request") {
 #' @keywords internal
 redcap_guard_body <- function(body, what) {
   head <- trimws(substr(body, 1L, 64L))
-  if (grepl('^\\{\\s*"error"', head) || grepl('^\\{\\s*\\047error\\047', head))
+  if (grepl('^\\{\\s*"error"', head) || grepl('^\\{\\s*\\047error\\047', head)) {
+    snippet <- substr(trimws(body), 1L, 200L)   # passed as a value so cli never glue-parses its braces
     cli::cli_abort(c("{what} returned an error, not data.",
-                     "x" = substr(trimws(body), 1L, 200L),
+                     "x" = "{snippet}",
                      "i" = "Nothing was snapshotted. Check the token and permissions."))
+  }
   invisible(body)
 }
 

@@ -63,13 +63,20 @@ run_dvp <- function(dvp, data) {
 #'
 #' Joins every column of each row into one string, so two findings are the same
 #' only when their entire rows match. Findings are free-form, so identity is the
-#' whole row and nothing is assumed about column names.
+#' whole row and nothing is assumed about column names. A genuine `NA` is
+#' encoded with a reserved control character, distinct from the literal string
+#' `"NA"`, so the two can never collide in the key.
 #' @param df A findings data frame.
 #' @return A character vector of one key per row (empty for a zero-row frame).
 #' @export
 finding_row_keys <- function(df) {
   if (nrow(df) == 0L) return(character(0))
-  do.call(paste, c(lapply(df, as.character), sep = "\x1f"))
+  cols <- lapply(df, function(col) {
+    ch <- as.character(col)
+    ch[is.na(col)] <- "\x02"
+    ch
+  })
+  do.call(paste, c(cols, sep = "\x1f"))
 }
 
 #' Row-bind two findings frames, tolerating differing columns
@@ -102,8 +109,10 @@ bind_findings <- function(x, y) {
 #' Runs `dvp` on `before` and on `after` and, for every check, labels each
 #' finding whole-row: `new` (row present in `after` but not `before`),
 #' `resolved` (row present in `before` but not `after`) or `unchanged` (row in
-#' both). A check that returns different columns is compared on exactly the
-#' columns it returns.
+#' both). Rows are keyed positionally over the columns each frame returns, so a
+#' check must return the same columns, in the same order, on both runs; a check
+#' that returns different or reordered columns between `before` and `after` is
+#' not reconciled and every row will read as changed.
 #' @param dvp A DVP function (see [run_dvp()]).
 #' @param before,after The two datasets (snapshots) to compare.
 #' @return A named list; each element is that check's findings with an added
@@ -163,25 +172,31 @@ report_trial_name <- function(snapshot) {
   sanitise_study_name(if (is.list(meta)) meta$name else NULL)
 }
 
-#' Site label for each finding row, looked up from the snapshot
+#' Site label for each finding row, looked up from one or more snapshots
 #'
 #' Findings carry only what the check selected, so sites are resolved from the
-#' snapshot: any table holding both `id_col` and `site_col` maps a record to a
-#' site. Findings whose record has no site (or whose frame has no `id_col`) are
-#' labelled `NO_SITE` so they are never silently dropped from the split.
+#' snapshot(s): any table holding both `id_col` and `site_col` maps a record to
+#' a site. Pass both the `before` and `after` snapshots when comparing, so a
+#' `resolved` finding whose record was removed from `after` is still sited from
+#' `before`. Findings whose record has no site in any snapshot (or whose frame
+#' has no `id_col`) are labelled `NO_SITE` so they are never silently dropped
+#' from the split.
 #' @param findings A findings data frame.
-#' @param snapshot The snapshot the findings came from.
+#' @param snapshots A list of snapshots to union (earlier snapshots take
+#'   priority when a record's site conflicts across snapshots).
 #' @param id_col Name of the record-id column shared by findings and data.
 #' @param site_col Name of the site column in the data.
 #' @return A character vector of sites, one per finding row.
 #' @export
-resolve_finding_sites <- function(findings, snapshot, id_col, site_col) {
+resolve_finding_sites <- function(findings, snapshots, id_col, site_col) {
   map <- character(0)
-  for (nm in names(snapshot)) {
-    tab <- snapshot[[nm]]
-    if (is.data.frame(tab) && all(c(id_col, site_col) %in% names(tab))) {
-      add <- stats::setNames(as.character(tab[[site_col]]), as.character(tab[[id_col]]))
-      map <- c(map, add[!names(add) %in% names(map)])
+  for (snap in snapshots) {
+    for (nm in names(snap)) {
+      tab <- snap[[nm]]
+      if (is.data.frame(tab) && all(c(id_col, site_col) %in% names(tab))) {
+        add <- stats::setNames(as.character(tab[[site_col]]), as.character(tab[[id_col]]))
+        map <- c(map, add[!names(add) %in% names(map)])
+      }
     }
   }
   ids <- if (id_col %in% names(findings)) as.character(findings[[id_col]])
@@ -195,15 +210,20 @@ resolve_finding_sites <- function(findings, snapshot, id_col, site_col) {
 #' Write each check's findings as a readable CSV and plain-text copy
 #'
 #' One pair of files per check, named by the check. Gives a fully testable,
-#' Excel-free record of every finding.
+#' Excel-free record of every finding. Names that sanitise to the same file
+#' stem (e.g. `"a/b"` and `"a b"` both sanitise to `"a_b"`) are de-duplicated
+#' with a trailing underscore, the same way the workbook sheet names are.
 #' @param sheets A named list of findings data frames.
 #' @param dir Directory to write into (created if missing).
 #' @return Invisibly, the directory.
 #' @export
 write_findings_readable <- function(sheets, dir) {
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  used <- character(0)
   for (nm in names(sheets)) {
     safe <- gsub("[^A-Za-z0-9_-]+", "_", nm)
+    while (safe %in% used) safe <- paste0(safe, "_")
+    used <- c(used, safe)
     df <- as.data.frame(sheets[[nm]])
     utils::write.csv(df, file.path(dir, paste0(safe, ".csv")), row.names = FALSE, na = "")
     txt <- if (nrow(df)) utils::capture.output(print(df, row.names = FALSE)) else "(no findings)"
@@ -254,12 +274,17 @@ nonempty_checks <- function(sheets) {
   sheets[vapply(sheets, function(d) nrow(d) > 0L, logical(1))]
 }
 
-#' Write one report set: an overall workbook plus (optionally) per-site workbooks
+#' Write one report set: an overall workbook plus (optionally) per-site output
 #'
 #' Writes the readable CSV/TXT copies and, when `write_xlsx`, an overall
 #' workbook of all findings. When `site_col` is given, each finding is assigned
-#' a site from the snapshot and a per-site workbook is written under `sites/`,
-#' so a centre receives only its own queries alongside the overall set.
+#' a site and a per-site CSV/TXT pair (plus, when `write_xlsx`, a per-site
+#' workbook) is written under `sites/`, so a centre receives only its own
+#' queries alongside the overall set; this per-site split does not require
+#' `openxlsx`. Sites are resolved from `snapshot`, and from `before_snapshot`
+#' too when given, so a `resolved` finding whose record was removed from
+#' `snapshot` is still sited correctly. A `cli_warn` is raised per check that
+#' has findings with no resolvable site.
 #' @param sheets A named list of findings data frames (empty checks omitted).
 #' @param snapshot The snapshot the findings came from (for site lookup).
 #' @param dir Directory to write this set into.
@@ -267,22 +292,34 @@ nonempty_checks <- function(sheets) {
 #' @param id_col,site_col Columns used to split by site; `site_col = NULL`
 #'   writes the overall workbook only.
 #' @param write_xlsx Write Excel workbooks (needs `openxlsx`)?
+#' @param before_snapshot Optional earlier snapshot, unioned with `snapshot`
+#'   for site lookup (see [resolve_finding_sites()]).
 #' @return Invisibly, the directory.
 #' @export
 write_report_set <- function(sheets, snapshot, dir, base_name,
                              id_col = "record_id", site_col = NULL,
-                             write_xlsx = TRUE) {
+                             write_xlsx = TRUE, before_snapshot = NULL) {
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   filled <- nonempty_checks(sheets)
 
   write_findings_readable(sheets, dir)
-  if (!isTRUE(write_xlsx) || !length(filled)) return(invisible(dir))
 
-  write_findings_workbook(filled, file.path(dir, paste0(base_name, ".xlsx")))
+  if (isTRUE(write_xlsx) && length(filled))
+    write_findings_workbook(filled, file.path(dir, paste0(base_name, ".xlsx")))
 
-  if (!is.null(site_col)) {
+  if (!is.null(site_col) && length(filled)) {
+    snapshots <- if (is.null(before_snapshot)) list(snapshot) else list(before_snapshot, snapshot)
     site_of <- lapply(filled, function(d)
-      resolve_finding_sites(d, snapshot, id_col, site_col))
+      resolve_finding_sites(d, snapshots, id_col, site_col))
+
+    for (nm in names(filled)) {
+      no_site_n <- sum(site_of[[nm]] == "NO_SITE")
+      if (no_site_n > 0L)
+        cli::cli_warn(c(
+          "Check {.val {nm}}: {no_site_n} finding{?s} could not be mapped to a site.",
+          "i" = "Written under {.val NO_SITE} in the per-site split."))
+    }
+
     all_sites <- sort(unique(unlist(site_of)))
     for (s in all_sites) {
       per_check <- list()
@@ -294,8 +331,10 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
       safe_site <- gsub("[^A-Za-z0-9_-]+", "_", s)
       sdir <- file.path(dir, "sites", safe_site)
       dir.create(sdir, recursive = TRUE, showWarnings = FALSE)
-      write_findings_workbook(per_check,
-        file.path(sdir, paste0(base_name, "_", safe_site, ".xlsx")))
+      write_findings_readable(per_check, sdir)
+      if (isTRUE(write_xlsx))
+        write_findings_workbook(per_check,
+          file.path(sdir, paste0(base_name, "_", safe_site, ".xlsx")))
     }
   }
   invisible(dir)
@@ -444,11 +483,13 @@ run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
     dir.create(report_dir, recursive = TRUE, showWarnings = FALSE)
 
     write_report_set(sheets, after, file.path(report_dir, "full"), base,
-                     id_col = id_col, site_col = site_col, write_xlsx = write_xlsx)
+                     id_col = id_col, site_col = site_col, write_xlsx = write_xlsx,
+                     before_snapshot = before)
     if (compared)
       write_report_set(update_sheets, after, file.path(report_dir, "update"),
                        paste0(base, "_Update"), id_col = id_col,
-                       site_col = site_col, write_xlsx = write_xlsx)
+                       site_col = site_col, write_xlsx = write_xlsx,
+                       before_snapshot = before)
     yaml::write_yaml(manifest, file.path(report_dir, manifest_filename))
     written_dirs <- c(written_dirs, report_dir)
   }

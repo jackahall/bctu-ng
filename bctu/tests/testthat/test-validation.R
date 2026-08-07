@@ -33,3 +33,28 @@ test_that("write_setup_report writes the schema and leaks no credential value", 
   printed <- paste(capture.output(print(result)), collapse = "\n")
   expect_false(grepl(sentinel, printed, fixed = TRUE))
 })
+
+test_that("a fatal check failing makes the overall verdict FAIL", {
+  store <- withr::local_tempdir()
+  result <- suppressWarnings(check_setup(store = store, formats = "docx",
+                         require_credentials = credential_spec(id = "missing_fatal"),
+                         verbose = 0L))
+
+  cred_row <- result$checks[result$checks$check == "Credential present: missing_fatal", ]
+  expect_equal(cred_row$status, "MISSING")
+  expect_true(cred_row$fatal)
+  expect_false(result$ok)
+})
+
+test_that("a missing not-required credential is informational, not fatal", {
+  store <- withr::local_tempdir()
+  result <- suppressWarnings(check_setup(store = store, formats = "docx",
+                         require_credentials = credential_spec(id = "missing_optional",
+                                                                required = FALSE),
+                         verbose = 0L))
+
+  cred_row <- result$checks[result$checks$check == "Credential present: missing_optional", ]
+  expect_equal(cred_row$status, "MISSING")
+  expect_false(cred_row$fatal)
+  expect_true(result$ok)
+})

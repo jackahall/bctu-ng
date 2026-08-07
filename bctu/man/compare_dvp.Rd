@@ -19,6 +19,8 @@ A named list; each element is that check's findings with an added
 Runs \code{dvp} on \code{before} and on \code{after} and, for every check, labels each
 finding whole-row: \code{new} (row present in \code{after} but not \code{before}),
 \code{resolved} (row present in \code{before} but not \code{after}) or \code{unchanged} (row in
-both). A check that returns different columns is compared on exactly the
-columns it returns.
+both). Rows are keyed positionally over the columns each frame returns, so a
+check must return the same columns, in the same order, on both runs; a check
+that returns different or reordered columns between \code{before} and \code{after} is
+not reconciled and every row will read as changed.
 }

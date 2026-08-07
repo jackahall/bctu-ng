@@ -2,7 +2,7 @@
 % Please edit documentation in R/validation.R
 \name{write_setup_report}
 \alias{write_setup_report}
-\title{Write a setup-qualification record as a YAML IQ/OQ artefact}
+\title{Write a setup-qualification record as a YAML IQ artefact}
 \usage{
 write_setup_report(
   result = check_setup(verbose = 0L),

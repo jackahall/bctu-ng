@@ -2,7 +2,7 @@
 % Please edit documentation in R/validation.R
 \name{check_setup}
 \alias{check_setup}
-\title{Check this machine is correctly set up to use bctu (installation IQ/OQ)}
+\title{Check this machine is correctly set up to use bctu (installation qualification)}
 \usage{
 check_setup(
   store = NULL,
@@ -35,18 +35,22 @@ Invisibly, a \code{bctu_setup_qualification} list with \code{ok} (overall pass),
 environment), \code{formats}, and \code{time}.
 }
 \description{
-Runs a battery of named installation-qualification / operational-qualification
-checks, prints an IQ/OQ-style table (Check / Result / Detail) with an overall
-PASS or FAIL, and returns (invisibly) a structured result you can archive with
-\code{\link[=write_setup_report]{write_setup_report()}}. This is validation layer (a): it qualifies that R, the
-system toolchain and the bctu dependencies are installed correctly and operate
-to spec on this machine. It is modelled on the R Foundation regulatory document
-R-FDA.pdf and the marcschwartz/R-IQ-OQ approach.
+Runs a battery of named installation-qualification (IQ) checks, prints an
+IQ-style table (Check / Result / Detail) with an overall PASS or FAIL, and
+returns (invisibly) a structured result you can archive with
+\code{\link[=write_setup_report]{write_setup_report()}}. This is validation layer (a): it confirms that R, the
+system toolchain and the bctu dependencies are installed and present on this
+machine. Every check is a presence/version probe; it does not render a
+document or run any operational-qualification (OQ) or R reference check, so a
+present-but-broken pandoc or TinyTeX install can still report PASS. An OQ
+render probe and R reference checks are a documented future item, not current
+behaviour. The approach is informed by the R Foundation regulatory document
+R-FDA.pdf and the marcschwartz/R-IQ-OQ tooling.
 }
 \details{
 Formal validation of the bctu package itself is done separately with the
 pharmaR \code{valtools} package at release time (requirements, test cases,
 traceability matrix, validation report), and dependency risk is scored with
 pharmaR \code{riskmetric} via \code{\link[=package_risk_report]{package_risk_report()}}. bctu does not recreate
-those frameworks; \code{check_setup()} is only the installation IQ/OQ.
+those frameworks; \code{check_setup()} is only the installation IQ.
 }

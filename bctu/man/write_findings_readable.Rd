@@ -16,5 +16,7 @@ Invisibly, the directory.
 }
 \description{
 One pair of files per check, named by the check. Gives a fully testable,
-Excel-free record of every finding.
+Excel-free record of every finding. Names that sanitise to the same file
+stem (e.g. \code{"a/b"} and \code{"a b"} both sanitise to \code{"a_b"}) are de-duplicated
+with a trailing underscore, the same way the workbook sheet names are.
 }

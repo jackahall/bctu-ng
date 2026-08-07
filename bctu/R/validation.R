@@ -5,15 +5,20 @@
 # builds only layer (a); it points at the pharmaR tools for (b) and (c) and does
 # NOT recreate them.
 #
-#   (a) Installation / environment IQ-OQ  -- WE build this, here.
-#       `check_setup()` runs a battery of named checks that qualify that R, the
-#       system toolchain and the bctu dependencies are INSTALLED correctly (IQ)
-#       and OPERATE to spec (OQ) on a given machine and R release. It is modelled
-#       on the R Foundation regulatory document "R: Regulatory Compliance and
-#       Validation Issues" (R-FDA.pdf, https://www.r-project.org/doc/R-FDA.pdf)
-#       and the marcschwartz/R-IQ-OQ approach that document underpins.
-#       `write_setup_report()` writes the result as an archivable, human- and
-#       machine-readable YAML qualification record.
+#   (a) Installation / environment qualification (IQ) -- WE build this, here.
+#       `check_setup()` runs a battery of named checks that confirm R, the system
+#       toolchain and the bctu dependencies are INSTALLED and present (IQ) on a
+#       given machine and R release. Every check is a presence/version probe; none
+#       of them render a document or run R's own reference/regression checks, so
+#       this is IQ only, not OQ. It is informed by the approach of the R
+#       Foundation regulatory document "R: Regulatory Compliance and Validation
+#       Issues" (R-FDA.pdf, https://www.r-project.org/doc/R-FDA.pdf) and the
+#       marcschwartz/R-IQ-OQ tooling, but does not implement their reference
+#       checks. `write_setup_report()` writes the result as an archivable, human-
+#       and machine-readable YAML qualification record.
+#       FUTURE ITEM (not yet implemented): an operational-qualification (OQ) step
+#       that actually renders a trivial docx/pdf and an R reference-check step,
+#       to catch a present-but-broken pandoc/TinyTeX toolchain.
 #
 #   (b) Package validation (bctu itself) -- use pharmaR `valtools`, NOT recreated.
 #       Formal validation of bctu (requirements -> test cases -> traceability
@@ -246,12 +251,25 @@ check_required_credentials <- function(require_credentials) {
         paste0("Credential '", spec$id, "' not found. Set keyring service '",
                spec$service, "' (user '", spec$id, "') or environment variable ",
                spec$env, "."),
-      fatal = TRUE, passed = present)
+      fatal = isTRUE(spec$required), passed = present)
   })
   do.call(rbind, rows)
 }
 
 # --- environment capture ---------------------------------------------------
+#' SHA-256 hash of the renv lockfile in the current project, or NULL
+#'
+#' Returns `NULL` (never errors) when renv is not installed or no lockfile is
+#' active, so the caller can omit the field rather than record a placeholder.
+#' @keywords internal
+renv_lockfile_hash <- function() {
+  if (!requireNamespace("renv", quietly = TRUE)) return(NULL)
+  lockfile <- tryCatch(renv::paths$lockfile(), error = function(e) NA_character_)
+  if (is.na(lockfile) || !file.exists(lockfile)) return(NULL)
+  tryCatch(digest::digest(file = lockfile, algo = "sha256"),
+           error = function(e) NULL)
+}
+
 #' @keywords internal
 capture_setup_environment <- function(formats) {
   hard_deps <- c("cli", "digest", "yaml")
@@ -261,7 +279,7 @@ capture_setup_environment <- function(formats) {
     utils::capture.output(print(sessioninfo::session_info()))
   else
     utils::capture.output(print(utils::sessionInfo()))
-  list(
+  environment <- list(
     r_version    = R.version.string,
     platform     = R.version$platform,
     os           = utils::osVersion %||% Sys.info()[["sysname"]],
@@ -273,9 +291,12 @@ capture_setup_environment <- function(formats) {
     git          = program_version_line("git"),
     session_info = session_lines
   )
+  hash <- renv_lockfile_hash()
+  if (!is.null(hash)) environment$renv_lockfile_hash <- hash
+  environment
 }
 
-# --- printing (IQ/OQ-style table) ------------------------------------------
+# --- printing (IQ-style table) ----------------------------------------------
 #' @keywords internal
 print_qualification_table <- function(checks) {
   width_check  <- max(nchar(c("Check", checks$check)))
@@ -297,21 +318,25 @@ print_qualification_table <- function(checks) {
 # ---------------------------------------------------------------------------
 # check_setup(): the one obvious call to qualify a machine (layer a).
 # ---------------------------------------------------------------------------
-#' Check this machine is correctly set up to use bctu (installation IQ/OQ)
+#' Check this machine is correctly set up to use bctu (installation qualification)
 #'
-#' Runs a battery of named installation-qualification / operational-qualification
-#' checks, prints an IQ/OQ-style table (Check / Result / Detail) with an overall
-#' PASS or FAIL, and returns (invisibly) a structured result you can archive with
-#' [write_setup_report()]. This is validation layer (a): it qualifies that R, the
-#' system toolchain and the bctu dependencies are installed correctly and operate
-#' to spec on this machine. It is modelled on the R Foundation regulatory document
-#' R-FDA.pdf and the marcschwartz/R-IQ-OQ approach.
+#' Runs a battery of named installation-qualification (IQ) checks, prints an
+#' IQ-style table (Check / Result / Detail) with an overall PASS or FAIL, and
+#' returns (invisibly) a structured result you can archive with
+#' [write_setup_report()]. This is validation layer (a): it confirms that R, the
+#' system toolchain and the bctu dependencies are installed and present on this
+#' machine. Every check is a presence/version probe; it does not render a
+#' document or run any operational-qualification (OQ) or R reference check, so a
+#' present-but-broken pandoc or TinyTeX install can still report PASS. An OQ
+#' render probe and R reference checks are a documented future item, not current
+#' behaviour. The approach is informed by the R Foundation regulatory document
+#' R-FDA.pdf and the marcschwartz/R-IQ-OQ tooling.
 #'
 #' Formal validation of the bctu package itself is done separately with the
 #' pharmaR `valtools` package at release time (requirements, test cases,
 #' traceability matrix, validation report), and dependency risk is scored with
 #' pharmaR `riskmetric` via [package_risk_report()]. bctu does not recreate
-#' those frameworks; `check_setup()` is only the installation IQ/OQ.
+#' those frameworks; `check_setup()` is only the installation IQ.
 #'
 #' @param store Optional snapshot store directory to test writing to. If `NULL`
 #'   (the default), the store is resolved from the current bctu project; if no
@@ -361,7 +386,7 @@ check_setup <- function(store = NULL,
   )
 
   if (verbose >= 2L) {
-    cli::cli_h1("bctu setup qualification (IQ/OQ)")
+    cli::cli_h1("bctu setup qualification (IQ)")
     print_qualification_table(checks)
     cli::cli_text("")
   }
@@ -379,7 +404,7 @@ check_setup <- function(store = NULL,
 
 #' @export
 print.bctu_setup_qualification <- function(x, ...) {
-  cli::cli_h1("bctu setup qualification (IQ/OQ)")
+  cli::cli_h1("bctu setup qualification (IQ)")
   print_qualification_table(x$checks)
   cli::cli_text("")
   if (isTRUE(x$ok))
@@ -390,9 +415,9 @@ print.bctu_setup_qualification <- function(x, ...) {
 }
 
 # ---------------------------------------------------------------------------
-# write_setup_report(): the archivable IQ/OQ artefact (YAML).
+# write_setup_report(): the archivable IQ artefact (YAML).
 # ---------------------------------------------------------------------------
-#' Write a setup-qualification record as a YAML IQ/OQ artefact
+#' Write a setup-qualification record as a YAML IQ artefact
 #'
 #' Writes the result of [check_setup()] to a human-readable and machine-readable
 #' YAML file (schema `bctu-setup-qualification/1`): a timestamp, the overall
@@ -460,7 +485,7 @@ package_dependency_names <- function(path) {
 #' `riskmetric`; if it is not installed this errors with how to install it.
 #'
 #' Dependency risk is validation layer (c). Formal validation of bctu itself is
-#' layer (b), done with `valtools` at release time. The installation IQ/OQ is
+#' layer (b), done with `valtools` at release time. The installation IQ is
 #' layer (a), [check_setup()].
 #'
 #' @param path Package root whose dependencies are scored. Default `"."`.
@@ -473,6 +498,12 @@ package_risk_report <- function(path = ".", ...) {
       "The {.pkg riskmetric} package is not installed.",
       "i" = "Install it with {.code install.packages(\"riskmetric\")}.",
       "i" = "{.pkg riskmetric} is the pharmaR / R Validation Hub tool for dependency risk; bctu does not recreate it (see {.url https://pharmar.org}).",
+      "x" = "No risk assessment was run."))
+  if (!requireNamespace("tibble", quietly = TRUE))
+    cli::cli_abort(c(
+      "The {.pkg tibble} package is not installed.",
+      "i" = "Install it with {.code install.packages(\"tibble\")}.",
+      "i" = "{.pkg riskmetric} needs {.pkg tibble} to assess dependencies.",
       "x" = "No risk assessment was run."))
 
   deps <- package_dependency_names(path)
