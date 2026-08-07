@@ -9,6 +9,14 @@ bctu_config(start = getwd())
 \arguments{
 \item{start}{Directory to search upward from; default the current directory.}
 }
+\value{
+The project configuration list (see \code{\link[=bctu_project]{bctu_project()}}), invisibly.
+}
 \description{
 Print the fully resolved configuration (for operators and auditors)
+}
+\examples{
+\dontrun{
+bctu_config()
+}
 }

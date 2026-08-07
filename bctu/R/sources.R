@@ -54,6 +54,14 @@
 #'   (e.g. `rawOrLabel`, `exportDataAccessGroups`, `filterLogic`).
 #' @return A `datasource` object.
 #' @seealso [datasource_sql()], [special_missing()], [take_snapshot()]
+#' @examples
+#' \dontrun{
+#' ds <- datasource_redcap(
+#'   token_id = "ocean",
+#'   url = "https://redcap.example.org/api/"
+#' )
+#' take_snapshot(ds)
+#' }
 #' @export
 datasource_redcap <- function(token_id, url, report_id = NULL, labelled = TRUE,
                               missing_codes = NULL, service = "bctu_api_token",
@@ -349,6 +357,15 @@ sql_connection <- function(driver = "ODBC Driver 18 for SQL Server",
 #' @param ... Reserved for future use.
 #' @return A `datasource` object.
 #' @seealso [sql_connection()], [datasource_redcap()], [take_snapshot()]
+#' @examples
+#' \dontrun{
+#' ds <- datasource_sql(
+#'   server = "sql.example.org",
+#'   database = "OCEAN",
+#'   tables = c("subjects", "visits")
+#' )
+#' take_snapshot(ds)
+#' }
 #' @export
 datasource_sql <- function(server, database, tables = NULL, views_query = NULL,
                            conn = sql_connection(), include = NULL,

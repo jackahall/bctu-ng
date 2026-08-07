@@ -22,3 +22,12 @@ A \code{bctu_report} object.
 The report is defined entirely by the objects you pass in; nothing is read
 from the global environment, so a report is reproducible and unit-testable.
 }
+\examples{
+bctu_report(
+  title = "Baseline Report",
+  sections = list(
+    intro = report_heading("Introduction"),
+    text  = report_paragraph("This report summarises baseline data.")
+  )
+)
+}

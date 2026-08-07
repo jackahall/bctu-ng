@@ -58,3 +58,9 @@ rows (new or resolved) is written alongside the full set. The trial name is
 taken from the snapshot itself (see \code{\link[=report_trial_name]{report_trial_name()}}); nothing about the
 trial has to be passed in.
 }
+\examples{
+\dontrun{
+dvp <- function(data) list(weight_range = data$records[data$records$weight_kg > 300, ])
+save_dvr(dvp, after = load_snapshot("latest"))
+}
+}

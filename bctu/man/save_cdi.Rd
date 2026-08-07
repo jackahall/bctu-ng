@@ -47,3 +47,9 @@ and per-check counts.
 Identical machinery to \code{\link[=save_dvr]{save_dvr()}} with its own label. A CDI has no update
 comparison, so \code{before} is not accepted.
 }
+\examples{
+\dontrun{
+dvp <- function(data) list(weight_range = data$records[data$records$weight_kg > 300, ])
+save_cdi(dvp, after = load_snapshot("latest"))
+}
+}

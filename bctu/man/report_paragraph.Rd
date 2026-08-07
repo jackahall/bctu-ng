@@ -15,3 +15,6 @@ A \code{bctu_report_paragraph} section object.
 \description{
 A paragraph (markdown/plain text) section
 }
+\examples{
+report_paragraph("This section summarises baseline characteristics.")
+}

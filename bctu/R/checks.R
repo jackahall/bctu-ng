@@ -27,6 +27,12 @@
 #' @param data The data the DVP reads: usually a snapshot (a named list of data
 #'   frames), but any object the DVP function accepts.
 #' @return A named list of findings data frames (empty frames kept in place).
+#' @examples
+#' data <- data.frame(id = 1:3, weight_kg = c(65, 999, 70))
+#' dvp <- function(data) {
+#'   list(weight_range = data[data$weight_kg > 300, ])
+#' }
+#' run_dvp(dvp, data)
 #' @export
 run_dvp <- function(dvp, data) {
   if (!is.function(dvp))
@@ -117,6 +123,13 @@ bind_findings <- function(x, y) {
 #' @param before,after The two datasets (snapshots) to compare.
 #' @return A named list; each element is that check's findings with an added
 #'   `status` column (`new` / `unchanged` / `resolved`).
+#' @examples
+#' before <- data.frame(id = 1:3, weight_kg = c(65, 999, 70))
+#' after  <- data.frame(id = 1:3, weight_kg = c(65, 72, 70))
+#' dvp <- function(data) {
+#'   list(weight_range = data[data$weight_kg > 300, ])
+#' }
+#' compare_dvp(dvp, before, after)
 #' @export
 compare_dvp <- function(dvp, before, after) {
   b <- run_dvp(dvp, before)
@@ -369,6 +382,11 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
 #' @param verbose Verbosity.
 #' @return Invisibly, a list with the report id, directories written, sheets,
 #'   and per-check counts.
+#' @examples
+#' \dontrun{
+#' dvp <- function(data) list(weight_range = data$records[data$records$weight_kg > 300, ])
+#' save_dvr(dvp, after = load_snapshot("latest"))
+#' }
 #' @export
 save_dvr <- function(dvp, after, before = NULL, paths = getwd(),
                      id_col = "record_id", site_col = NULL, version = NULL,
@@ -385,6 +403,11 @@ save_dvr <- function(dvp, after, before = NULL, paths = getwd(),
 #' @inheritParams save_dvr
 #' @return Invisibly, a list with the report id, directories written, sheets,
 #'   and per-check counts.
+#' @examples
+#' \dontrun{
+#' dvp <- function(data) list(weight_range = data$records[data$records$weight_kg > 300, ])
+#' save_cdi(dvp, after = load_snapshot("latest"))
+#' }
 #' @export
 save_cdi <- function(dvp, after, paths = getwd(), id_col = "record_id",
                      site_col = NULL, version = NULL, operator = NULL,

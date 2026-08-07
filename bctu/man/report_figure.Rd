@@ -24,3 +24,6 @@ A \code{bctu_report_figure} section object.
 Supply either a \code{path} to an existing image, or a \code{plot} object (for example
 a ggplot), which is saved to a PNG when the report is rendered.
 }
+\examples{
+report_figure(path = "baseline-histogram.png", caption = "Age at baseline")
+}

@@ -62,6 +62,15 @@ time.
 Datetimes are returned exactly as REDCap sends them (text); no timezone is
 guessed or applied.
 }
+\examples{
+\dontrun{
+ds <- datasource_redcap(
+  token_id = "ocean",
+  url = "https://redcap.example.org/api/"
+)
+take_snapshot(ds)
+}
+}
 \seealso{
 \code{\link[=datasource_sql]{datasource_sql()}}, \code{\link[=special_missing]{special_missing()}}, \code{\link[=take_snapshot]{take_snapshot()}}
 }

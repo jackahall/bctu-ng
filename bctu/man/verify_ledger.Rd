@@ -15,3 +15,7 @@ A list with \code{ok} and, when broken, the first offending \code{seq}.
 \description{
 Verify the audit ledger's hash chain (tamper-evidence)
 }
+\examples{
+store <- withr::local_tempdir()
+verify_ledger(store)
+}

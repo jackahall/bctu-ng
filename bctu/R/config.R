@@ -20,6 +20,10 @@ project_marker_name <- "bctu-project.yml"
 #' @param dir Directory to write the marker into; default the current directory.
 #' @param overwrite Overwrite an existing marker? Default `FALSE`.
 #' @return The absolute path of the written marker, invisibly.
+#' @examples
+#' \dontrun{
+#' bctu_init_project("OCeAN", dir = "path/to/trial/root")
+#' }
 #' @export
 bctu_init_project <- function(name,
                               snapshot_store = "Data/Snapshots",
@@ -102,6 +106,10 @@ bctu_project <- function(start = getwd()) {
 #'   pass `TRUE`; read/inspect paths leave it `FALSE` (no directory is created
 #'   merely by resolving or listing).
 #' @return The absolute snapshot store path.
+#' @examples
+#' \dontrun{
+#' snapshot_store()
+#' }
 #' @export
 snapshot_store <- function(start = getwd(), verbose = 1L, create = FALSE) {
   p <- bctu_project(start)
@@ -121,6 +129,11 @@ snapshot_store <- function(start = getwd(), verbose = 1L, create = FALSE) {
 
 #' Print the fully resolved configuration (for operators and auditors)
 #' @param start Directory to search upward from; default the current directory.
+#' @return The project configuration list (see [bctu_project()]), invisibly.
+#' @examples
+#' \dontrun{
+#' bctu_config()
+#' }
 #' @export
 bctu_config <- function(start = getwd()) {
   p <- bctu_project(start)

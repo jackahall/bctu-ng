@@ -41,3 +41,10 @@ silently skipped.}
 \description{
 Save an in-memory snapshot to the store
 }
+\examples{
+\dontrun{
+ds <- datasource_example()
+snap <- fetch_snapshot(ds)
+save_snapshot(snap)
+}
+}

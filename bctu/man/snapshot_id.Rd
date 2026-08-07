@@ -15,3 +15,6 @@ A length-1 character id \code{"YYYY-MM-DDTHHMMSSZ"}.
 \description{
 Canonical snapshot identifier from a time
 }
+\examples{
+snapshot_id(as.POSIXct("2026-01-15 09:30:00", tz = "UTC"))
+}

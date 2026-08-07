@@ -41,6 +41,9 @@
 #'   `"left"`, `"right"`, `"center"` per displayed column. If `NULL` (default),
 #'   numeric columns are right-aligned and all others left-aligned.
 #' @return A `bctu_report_table` object.
+#' @examples
+#' data <- data.frame(id = 1:3, age = c(45, 62, 38), sex = c("F", "M", "F"))
+#' report_table(data, caption = "Baseline characteristics")
 #' @export
 report_table <- function(data,
                          columns = NULL,
@@ -201,6 +204,10 @@ report_table_display_body <- function(x) {
 #'
 #' @param x A `bctu_report_table`.
 #' @return A single string containing the pandoc grid table (and its caption).
+#' @examples
+#' data <- data.frame(id = 1:3, age = c(45, 62, 38))
+#' tbl <- report_table(data, caption = "Baseline characteristics")
+#' cat(render_table_markdown(tbl))
 #' @export
 render_table_markdown <- function(x) {
   if (!inherits(x, "bctu_report_table"))

@@ -22,3 +22,10 @@ check finds nothing). The function is rejected with a clear error if it does
 not return a named list, so a malformed DVP fails immediately rather than
 producing an unusable report.
 }
+\examples{
+data <- data.frame(id = 1:3, weight_kg = c(65, 999, 70))
+dvp <- function(data) {
+  list(weight_range = data[data$weight_kg > 300, ])
+}
+run_dvp(dvp, data)
+}

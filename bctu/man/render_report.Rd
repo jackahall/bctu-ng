@@ -46,3 +46,15 @@ bundle to any \code{extra_destinations}, and writes a human-readable provenance
 manifest (\code{report-manifest.yml}) recording the snapshot, data-cut date, tool
 versions, template identity, and the SHA-256 of every output file.
 }
+\examples{
+\dontrun{
+report <- bctu_report(
+  title = "Baseline Report",
+  sections = list(
+    intro = report_heading("Introduction"),
+    text  = report_paragraph("This report summarises baseline data.")
+  )
+)
+render_report(report, output_dir = "reports", formats = "docx")
+}
+}

@@ -50,3 +50,7 @@ Returns a single structured object that both the Word (grid table) and PDF
 way everywhere. The body data keeps its original types, so the exact numbers
 behind the report are always retrievable with \code{\link[=report_table_data]{report_table_data()}}.
 }
+\examples{
+data <- data.frame(id = 1:3, age = c(45, 62, 38), sex = c("F", "M", "F"))
+report_table(data, caption = "Baseline characteristics")
+}

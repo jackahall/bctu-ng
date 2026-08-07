@@ -69,6 +69,16 @@ If any requested object loads as something other than a data frame (a view
 whose SQL errored can arrive as a character error message), the fetch aborts
 loudly naming the offending object rather than snapshotting the error.
 }
+\examples{
+\dontrun{
+ds <- datasource_sql(
+  server = "sql.example.org",
+  database = "OCEAN",
+  tables = c("subjects", "visits")
+)
+take_snapshot(ds)
+}
+}
 \seealso{
 \code{\link[=sql_connection]{sql_connection()}}, \code{\link[=datasource_redcap]{datasource_redcap()}}, \code{\link[=take_snapshot]{take_snapshot()}}
 }

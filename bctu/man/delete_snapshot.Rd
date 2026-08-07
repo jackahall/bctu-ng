@@ -35,3 +35,8 @@ self-documenting record of what was removed, and writes a small
 \code{deletion-note.yml} alongside it capturing the \code{reason}. \code{mode = "destroy"}
 removes the directory outright.
 }
+\examples{
+\dontrun{
+delete_snapshot("latest", reason = "duplicate extraction")
+}
+}

@@ -42,6 +42,9 @@ ledger_path <- function(store) file.path(store, ledger_filename)
 #' Read the snapshot audit ledger (a list of records, oldest first)
 #' @param store Snapshot store directory.
 #' @return A list of ledger records (empty list if none yet).
+#' @examples
+#' store <- withr::local_tempdir()
+#' read_ledger(store)
 #' @export
 read_ledger <- function(store = snapshot_store(verbose = 0L)) {
   p <- ledger_path(store)
@@ -73,6 +76,9 @@ append_ledger <- function(store, record) {
 #' Verify the audit ledger's hash chain (tamper-evidence)
 #' @param store Snapshot store directory.
 #' @return A list with `ok` and, when broken, the first offending `seq`.
+#' @examples
+#' store <- withr::local_tempdir()
+#' verify_ledger(store)
 #' @export
 verify_ledger <- function(store = snapshot_store(verbose = 0L)) {
   records <- read_ledger(store)
@@ -178,6 +184,11 @@ checkpoint <- function() {
 #' @param git Git provenance mode; see [save_snapshot()].
 #' @param verbose Verbosity.
 #' @return The saved snapshot, with its `id` attached, invisibly.
+#' @examples
+#' \dontrun{
+#' ds <- datasource_example()
+#' take_snapshot(ds)
+#' }
 #' @export
 take_snapshot <- function(source, store = snapshot_store(create = TRUE),
                           formats = c("rds", "csv"), tag = NULL, labels = NULL,
@@ -202,6 +213,12 @@ take_snapshot <- function(source, store = snapshot_store(create = TRUE),
 #'   silently skipped.
 #' @param verbose Verbosity.
 #' @return `x` with `id` attached, invisibly.
+#' @examples
+#' \dontrun{
+#' ds <- datasource_example()
+#' snap <- fetch_snapshot(ds)
+#' save_snapshot(snap)
+#' }
 #' @export
 save_snapshot <- function(x, store = snapshot_store(create = TRUE),
                           formats = c("rds", "csv"), tag = NULL, labels = NULL,
@@ -375,6 +392,9 @@ sanitise_study_name <- function(name) {
 # --- resolve / list ---------------------------------------------------------
 #' List snapshot ids in a store (newest last)
 #' @param store Snapshot store directory.
+#' @examples
+#' store <- withr::local_tempdir()
+#' list_snapshots(store)
 #' @export
 list_snapshots <- function(store = snapshot_store(verbose = 0L)) {
   d <- list.dirs(store, recursive = FALSE, full.names = FALSE)
@@ -400,6 +420,10 @@ resolve_snapshot_which <- function(which, store) {
 #' @param table Optionally, return only this table.
 #' @param verbose Verbosity.
 #' @return A `bctu_snapshot` (or a single data frame if `table` is given).
+#' @examples
+#' \dontrun{
+#' load_snapshot("latest")
+#' }
 #' @export
 load_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0L),
                           table = NULL, verbose = 2L) {
@@ -432,6 +456,10 @@ load_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0L)
 #' @param which Snapshot selector.
 #' @param store Snapshot store directory.
 #' @return A list with `ok` (logical) and a per-file `details` data frame.
+#' @examples
+#' \dontrun{
+#' verify_snapshot("latest")
+#' }
 #' @export
 verify_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0L)) {
   id <- resolve_snapshot_which(which, store); dir <- file.path(store, id)
@@ -467,6 +495,10 @@ verify_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0
 #'   `"destroy"` (remove).
 #' @param verbose Verbosity.
 #' @return The deleted id, invisibly.
+#' @examples
+#' \dontrun{
+#' delete_snapshot("latest", reason = "duplicate extraction")
+#' }
 #' @export
 delete_snapshot <- function(which, reason, store = snapshot_store(verbose = 0L),
                             mode = c("retire", "destroy"), verbose = 2L) {

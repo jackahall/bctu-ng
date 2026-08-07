@@ -15,3 +15,7 @@ A list of ledger records (empty list if none yet).
 \description{
 Read the snapshot audit ledger (a list of records, oldest first)
 }
+\examples{
+store <- withr::local_tempdir()
+read_ledger(store)
+}

@@ -12,3 +12,7 @@ list_snapshots(store = snapshot_store(verbose = 0L))
 \description{
 List snapshot ids in a store (newest last)
 }
+\examples{
+store <- withr::local_tempdir()
+list_snapshots(store)
+}

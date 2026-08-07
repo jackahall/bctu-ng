@@ -26,3 +26,8 @@ dependency versions, pandoc / xelatex / git versions, and session-level
 detail). This is the archivable installation-qualification artefact. No
 credential value is ever written.
 }
+\examples{
+\dontrun{
+write_setup_report(path = "bctu-setup-qualification.yml")
+}
+}

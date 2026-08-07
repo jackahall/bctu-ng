@@ -17,3 +17,8 @@ A list with \code{ok} (logical) and a per-file \code{details} data frame.
 \description{
 Verify a snapshot's on-disk integrity against its manifest (SHA-256)
 }
+\examples{
+\dontrun{
+verify_snapshot("latest")
+}
+}

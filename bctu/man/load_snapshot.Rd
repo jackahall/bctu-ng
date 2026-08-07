@@ -26,3 +26,8 @@ A \code{bctu_snapshot} (or a single data frame if \code{table} is given).
 \description{
 Load a snapshot from the store
 }
+\examples{
+\dontrun{
+load_snapshot("latest")
+}
+}

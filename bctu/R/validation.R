@@ -354,6 +354,10 @@ print_qualification_table <- function(checks) {
 #' @return Invisibly, a `bctu_setup_qualification` list with `ok` (overall pass),
 #'   `checks` (a data frame of every check), `environment` (the captured
 #'   environment), `formats`, and `time`.
+#' @examples
+#' \donttest{
+#' check_setup(verbose = 1)
+#' }
 #' @export
 check_setup <- function(store = NULL,
                         formats = c("docx", "pdf"),
@@ -430,6 +434,10 @@ print.bctu_setup_qualification <- function(x, ...) {
 #'   running [check_setup()] silently.
 #' @param path Output file path. Default `"bctu-setup-qualification.yml"`.
 #' @return The absolute path of the written file, invisibly.
+#' @examples
+#' \dontrun{
+#' write_setup_report(path = "bctu-setup-qualification.yml")
+#' }
 #' @export
 write_setup_report <- function(result = check_setup(verbose = 0L),
                                path = "bctu-setup-qualification.yml") {
@@ -491,6 +499,10 @@ package_dependency_names <- function(path) {
 #' @param path Package root whose dependencies are scored. Default `"."`.
 #' @param ... Passed through to `riskmetric::pkg_assess()`.
 #' @return A tidy data frame of dependency risk scores.
+#' @examples
+#' \dontrun{
+#' package_risk_report(path = ".")
+#' }
 #' @export
 package_risk_report <- function(path = ".", ...) {
   if (!requireNamespace("riskmetric", quietly = TRUE))

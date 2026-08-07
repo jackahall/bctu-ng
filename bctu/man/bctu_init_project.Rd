@@ -29,3 +29,8 @@ Writes a \code{bctu-project.yml} marker at \code{dir} declaring the project name
 relative to the marker, where snapshots live. This file is the single anchor
 for all later path resolution and should be committed to the trial repo.
 }
+\examples{
+\dontrun{
+bctu_init_project("OCeAN", dir = "path/to/trial/root")
+}
+}

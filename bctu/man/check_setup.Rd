@@ -54,3 +54,8 @@ traceability matrix, validation report), and dependency risk is scored with
 pharmaR \code{riskmetric} via \code{\link[=package_risk_report]{package_risk_report()}}. bctu does not recreate
 those frameworks; \code{check_setup()} is only the installation IQ.
 }
+\examples{
+\donttest{
+check_setup(verbose = 1)
+}
+}

@@ -39,3 +39,9 @@ The saved snapshot, with its \code{id} attached, invisibly.
 \description{
 Fetch a source and save it as an immutable snapshot
 }
+\examples{
+\dontrun{
+ds <- datasource_example()
+take_snapshot(ds)
+}
+}

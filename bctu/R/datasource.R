@@ -52,6 +52,9 @@ print.datasource <- function(x, ...) {
 #' @param expect_nchar Optional exact expected length (e.g. REDCap tokens = 32).
 #' @param required Is the credential required? Default `TRUE`.
 #' @return A `credential_spec`.
+#' @examples
+#' credential_spec("ocean")
+#' credential_spec("ocean", expect_nchar = 32L)
 #' @export
 credential_spec <- function(id, service = "bctu_api_token", env = NULL,
                             expect_nchar = NULL, required = TRUE) {

@@ -30,3 +30,7 @@ A \code{credential_spec}.
 \description{
 Declare where a credential lives (never the secret itself)
 }
+\examples{
+credential_spec("ocean")
+credential_spec("ocean", expect_nchar = 32L)
+}

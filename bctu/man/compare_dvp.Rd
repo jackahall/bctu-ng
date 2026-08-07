@@ -24,3 +24,11 @@ check must return the same columns, in the same order, on both runs; a check
 that returns different or reordered columns between \code{before} and \code{after} is
 not reconciled and every row will read as changed.
 }
+\examples{
+before <- data.frame(id = 1:3, weight_kg = c(65, 999, 70))
+after  <- data.frame(id = 1:3, weight_kg = c(65, 72, 70))
+dvp <- function(data) {
+  list(weight_range = data[data$weight_kg > 300, ])
+}
+compare_dvp(dvp, before, after)
+}

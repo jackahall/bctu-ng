@@ -21,6 +21,8 @@ snapshot_id_regex <- "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z(-[0-9]{2})?$"
 #' Canonical snapshot identifier from a time
 #' @param time A `POSIXct` (or anything coercible); interpreted/rendered in UTC.
 #' @return A length-1 character id `"YYYY-MM-DDTHHMMSSZ"`.
+#' @examples
+#' snapshot_id(as.POSIXct("2026-01-15 09:30:00", tz = "UTC"))
 #' @export
 snapshot_id <- function(time = utc_now()) {
   time <- as.POSIXct(time, tz = "UTC")

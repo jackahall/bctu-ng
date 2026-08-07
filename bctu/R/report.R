@@ -19,6 +19,8 @@
 #' @param text Heading text.
 #' @param level Heading level (1 = top). Default 1.
 #' @return A `bctu_report_heading` section object.
+#' @examples
+#' report_heading("Baseline characteristics", level = 2)
 #' @export
 report_heading <- function(text, level = 1L) {
   if (!is_string(text)) cli::cli_abort("{.arg text} must be a single string.")
@@ -31,6 +33,8 @@ report_heading <- function(text, level = 1L) {
 #' A paragraph (markdown/plain text) section
 #' @param text Paragraph text (markdown is allowed).
 #' @return A `bctu_report_paragraph` section object.
+#' @examples
+#' report_paragraph("This section summarises baseline characteristics.")
 #' @export
 report_paragraph <- function(text) {
   if (!is_string(text)) cli::cli_abort("{.arg text} must be a single string.")
@@ -48,6 +52,8 @@ report_paragraph <- function(text) {
 #' @param width Display width as a fraction of the text width (0-1). Default 0.8.
 #' @param dpi Resolution used when saving a `plot`. Default 150.
 #' @return A `bctu_report_figure` section object.
+#' @examples
+#' report_figure(path = "baseline-histogram.png", caption = "Age at baseline")
 #' @export
 report_figure <- function(path = NULL, plot = NULL, caption = NULL,
                           width = 0.8, dpi = 150) {
@@ -71,6 +77,14 @@ report_figure <- function(path = NULL, plot = NULL, caption = NULL,
 #' @param meta Optional named list of extra metadata to record (for example the
 #'   author or trial name); stored with the report and written to the manifest.
 #' @return A `bctu_report` object.
+#' @examples
+#' bctu_report(
+#'   title = "Baseline Report",
+#'   sections = list(
+#'     intro = report_heading("Introduction"),
+#'     text  = report_paragraph("This report summarises baseline data.")
+#'   )
+#' )
 #' @export
 bctu_report <- function(title, sections, meta = list()) {
   if (!is_string(title)) cli::cli_abort("{.arg title} must be a single string.")
@@ -121,6 +135,17 @@ print.bctu_report <- function(x, ...) {
 #'   copy the whole rendered bundle into.
 #' @param verbose Verbosity.
 #' @return Invisibly, a list describing the render (output paths and manifest).
+#' @examples
+#' \dontrun{
+#' report <- bctu_report(
+#'   title = "Baseline Report",
+#'   sections = list(
+#'     intro = report_heading("Introduction"),
+#'     text  = report_paragraph("This report summarises baseline data.")
+#'   )
+#' )
+#' render_report(report, output_dir = "reports", formats = "docx")
+#' }
 #' @export
 render_report <- function(report, output_dir,
                           formats = c("docx", "pdf"),

@@ -15,3 +15,8 @@ A single string containing the pandoc grid table (and its caption).
 \description{
 Render a report table as a pandoc grid table (for the DOCX path)
 }
+\examples{
+data <- data.frame(id = 1:3, age = c(45, 62, 38))
+tbl <- report_table(data, caption = "Baseline characteristics")
+cat(render_table_markdown(tbl))
+}

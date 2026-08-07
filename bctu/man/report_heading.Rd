@@ -17,3 +17,6 @@ A \code{bctu_report_heading} section object.
 \description{
 A heading section
 }
+\examples{
+report_heading("Baseline characteristics", level = 2)
+}

@@ -25,3 +25,8 @@ directory. This is the single store resolver: it ERRORS if no
 snapshot can never be written somewhere unnoticed. Pass an explicit \verb{store=}
 to a snapshot function to write outside a project.
 }
+\examples{
+\dontrun{
+snapshot_store()
+}
+}
