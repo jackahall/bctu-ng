@@ -11,19 +11,19 @@
   path.
 * `take_snapshot()` / `save_snapshot()` gain `tag =` and `labels =` to mark an
   extraction (e.g. `"DMC-2026-08"`). The tag is recorded on the snapshot and its
-  tables, in the manifest and the audit ledger, and flows into the DVR/CDI and
-  report manifests. With `git = "commit"` (the default when a tag is given), bctu
-  records the repository HEAD, commits the snapshot metadata (manifest + ledger,
-  never the payload), and creates an annotated `snap/<tag>` git tag.
+  tables, in the manifest, and flows into the DVR/CDI and report manifests. When a
+  `tag` is given, bctu also creates an annotated `snap/<tag>` git tag.
 * New snapshot payload formats: `"dta"`, `"sas7bdat"`, `"xpt"`, and `"sas"` (an
   import script), alongside `"rds"` and `"csv"`.
 
 ## Audit trail and safety
 
-* Restored the append-only, hash-chained audit ledger (`SNAPSHOTS.log.yml`) at the
-  store root. Every take and every delete (including `mode = "destroy"`) appends a
-  metadata-only record before anything is removed, so a destroyed snapshot still
-  leaves a trace. `read_ledger()` and `verify_ledger()` inspect and check it.
+* Git history is the audit trail. Every `take_snapshot()`/`save_snapshot()` and
+  every `delete_snapshot()` commits the snapshot metadata (the manifest only,
+  never the payload) to the trial repository by default. A destroy is committed
+  too, so removing a snapshot still leaves a git record (author, time, reason).
+  Use `git = "off"` to skip, or `git = "record"` on save to write HEAD into the
+  manifest without committing.
 * One store resolver, `snapshot_store()`, which errors when no `bctu-project.yml`
   is found instead of silently falling back to the working directory. Pass an
   explicit `store =` to write outside a project. The former `snapshot_location()`

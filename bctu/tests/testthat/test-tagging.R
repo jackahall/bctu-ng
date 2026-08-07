@@ -1,4 +1,4 @@
-test_that("a tag propagates to the snapshot, its tables, the manifest and the ledger", {
+test_that("a tag propagates to the snapshot, its tables and the manifest", {
   store <- withr::local_tempdir()
   snap <- take_snapshot(datasource_example("redcap", n = 8L, seed = 1L),
                         store = store, tag = "DMC-2026-08", git = "off", verbose = 0L)
@@ -9,9 +9,6 @@ test_that("a tag propagates to the snapshot, its tables, the manifest and the le
   id  <- attr(snap, "id")
   man <- yaml::read_yaml(file.path(store, id, "manifest.yml"))
   expect_equal(man$tag, "DMC-2026-08")
-
-  led <- read_ledger(store)
-  expect_equal(led[[1]]$tag, "DMC-2026-08")
 
   loaded <- load_snapshot("latest", store = store, verbose = 0L)
   expect_equal(attr(loaded, "bctu_tag"), "DMC-2026-08")
@@ -38,7 +35,7 @@ test_that("git=commit records HEAD, commits metadata only, and annotates a tag",
   tags <- system2("git", c("-C", repo, "tag", "--list"), stdout = TRUE)
   expect_true("snap/DMC-2026-08" %in% tags)
 
-  # the commit staged metadata (manifest + ledger), never a payload file
+  # the commit staged metadata (manifest only), never a payload file
   files <- system2("git", c("-C", repo, "show", "--name-only", "--pretty=format:", "HEAD"),
                    stdout = TRUE)
   files <- files[nzchar(files)]

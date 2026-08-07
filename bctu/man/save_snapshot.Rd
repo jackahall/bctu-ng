@@ -26,12 +26,12 @@ save_snapshot(
 
 \item{labels}{Optional named list of extra free-text metadata.}
 
-\item{git}{Git provenance: \code{"record"} writes the repo's HEAD SHA into the
-manifest; \code{"commit"} also commits the metadata (manifest + ledger, never the
-payload) and creates an annotated \verb{snap/<tag-or-id>} tag; \code{"off"} skips git.
-Default \code{NULL} = \code{"commit"} when a \code{tag} is given, else \code{"record"}. Never
-fails a snapshot: if git is unavailable or the store is not in a repo, it is
-silently skipped.}
+\item{git}{Git provenance (git history is the audit trail). \code{"commit"} (the
+default) commits the metadata (manifest only, never the payload), adding an
+annotated \verb{snap/<tag>} tag when a \code{tag} is given; \code{"record"} only writes the
+repo's HEAD SHA into the manifest without committing; \code{"off"} skips git
+entirely. Never fails a snapshot: if git is unavailable the commit is skipped
+(with a warning when the store is not in a repository).}
 
 \item{verbose}{Verbosity.}
 }

@@ -9,12 +9,12 @@
 #     tables/<table>/<study>_<table>_<id>.csv         readable exchange copy
 # Payload files are self-identifying: the study name, table name, and snapshot id
 # are in the filename, so a file stays recognisable if it is moved out of the
-# store. Integrity is SHA-256 recorded in the manifest. Every take and every
-# delete also appends a metadata-only record to a hash-chained, append-only
-# audit ledger at the store root (SNAPSHOTS.log.yml), so the sequence of
-# extractions and deletions is tamper-evident and a destroyed snapshot still
-# leaves a trace. Payloads are never made read-only, so ordinary git and delete
-# operations never fight the filesystem.
+# store. Integrity is SHA-256 recorded in the manifest. The audit trail is git:
+# every take and every delete commits the snapshot metadata (manifest only, never
+# payload) to the trial repository, so the sequence of extractions and deletions
+# is recorded in git history (author, time, and diff) and a destroyed snapshot
+# still leaves a commit. Payloads are never made read-only, so ordinary git and
+# delete operations never fight the filesystem.
 
 manifest_filename     <- "manifest.yml"
 snapshot_schema       <- "bctu-snapshot/1"
@@ -29,70 +29,7 @@ as_snapshot <- function(tables, source, name) {
                              checkpoint = checkpoint()))
 }
 
-# --- append-only audit ledger (store root) ----------------------------------
-# One human-readable YAML file at the store root records every take and every
-# delete, hash-chained so that reordering or removing a record is detectable.
-# It holds METADATA ONLY (ids, names, tags, per-table SHA-256, operator), never
-# participant data. This is the append-only audit trail required by GCP/ALCOA+.
-ledger_filename <- "SNAPSHOTS.log.yml"
-
-#' @keywords internal
-ledger_path <- function(store) file.path(store, ledger_filename)
-
-#' Read the snapshot audit ledger (a list of records, oldest first)
-#' @param store Snapshot store directory.
-#' @return A list of ledger records (empty list if none yet).
-#' @examples
-#' store <- withr::local_tempdir()
-#' read_ledger(store)
-#' @export
-read_ledger <- function(store = snapshot_store(verbose = 0L)) {
-  p <- ledger_path(store)
-  if (!file.exists(p)) return(list())
-  rec <- yaml::read_yaml(p)
-  rec$records %||% list()
-}
-
-#' @keywords internal
-ledger_record_sha <- function(record) {
-  record$record_sha <- NULL
-  sha256_object(record)
-}
-
-#' @keywords internal
-append_ledger <- function(store, record) {
-  records <- read_ledger(store)
-  prev <- if (length(records)) records[[length(records)]]$record_sha else "GENESIS"
-  record$seq      <- length(records) + 1L
-  record$prev_sha <- prev
-  record$record_sha <- ledger_record_sha(record)
-  records[[length(records) + 1L]] <- record
-  tmp <- paste0(ledger_path(store), ".tmp")
-  yaml::write_yaml(list(schema = "bctu-snapshot-ledger/1", records = records), tmp)
-  file.rename(tmp, ledger_path(store))
-  invisible(record)
-}
-
-#' Verify the audit ledger's hash chain (tamper-evidence)
-#' @param store Snapshot store directory.
-#' @return A list with `ok` and, when broken, the first offending `seq`.
-#' @examples
-#' store <- withr::local_tempdir()
-#' verify_ledger(store)
-#' @export
-verify_ledger <- function(store = snapshot_store(verbose = 0L)) {
-  records <- read_ledger(store)
-  prev <- "GENESIS"
-  for (r in records) {
-    stated <- r$record_sha
-    if (!identical(r$prev_sha, prev) || !identical(stated, ledger_record_sha(r)))
-      return(list(ok = FALSE, broken_at = r$seq))
-    prev <- stated
-  }
-  list(ok = TRUE, n = length(records))
-}
-
-# --- git provenance (metadata only; never fails a snapshot) -----------------
+# --- git provenance: the audit trail (metadata only; never fails a snapshot) ---
 #' @keywords internal
 git_available <- function() nzchar(Sys.which("git"))
 
@@ -125,7 +62,11 @@ git_dirty <- function(root) {
   isTRUE(r$ok) && any(nzchar(r$out))
 }
 
-#' Commit a snapshot's metadata (manifest + ledger) and annotate a tag
+#' Commit a snapshot's metadata (manifest only, never payload) to the trial repo
+#'
+#' Git history is the audit trail: every saved snapshot commits its manifest. An
+#' annotated `snap/<tag>` tag is added only when the extraction carries an explicit
+#' `tag` (routine snapshots are not tagged, to avoid a tag per snapshot).
 #' @keywords internal
 commit_snapshot_metadata <- function(root, meta_files, id, tag = NULL, verbose = 1L) {
   rels <- vapply(meta_files, function(f) relative_to(f, root), character(1))
@@ -143,12 +84,35 @@ commit_snapshot_metadata <- function(root, meta_files, id, tag = NULL, verbose =
                       "i" = paste(utils::tail(ci$out, 1L), collapse = " ")))
     return(invisible(FALSE))
   }
-  tagname <- paste0("snap/", tag %||% id)
-  tg <- git_run(root, c("tag", "-a", tagname, "-m", msg))
-  if (verbose >= 1L) {
-    if (tg$ok) cli::cli_alert_success("committed snapshot metadata and tagged {.val {tagname}}.")
-    else cli::cli_warn("Committed metadata, but tag {.val {tagname}} could not be created (it may already exist).")
+  if (!is.null(tag)) {
+    tagname <- paste0("snap/", tag)
+    tg <- git_run(root, c("tag", "-a", tagname, "-m", msg))
+    if (verbose >= 1L && !tg$ok)
+      cli::cli_warn("Committed metadata, but tag {.val {tagname}} could not be created (it may already exist).")
   }
+  if (verbose >= 1L)
+    cli::cli_alert_success("committed snapshot metadata for {.val {id}}{if (!is.null(tag)) paste0(' (tag ', tag, ')') else ''}.")
+  invisible(TRUE)
+}
+
+#' Commit a snapshot's deletion (metadata only) to the trial repo
+#'
+#' The deletion commit is the audit record that a snapshot was retired or
+#' destroyed: it stages the metadata change (the manifest's removal, plus the
+#' retained `deletion-note.yml` when retiring) and commits it with the id, mode
+#' and reason in the message. Never fails the deletion: a failed commit warns.
+#' @keywords internal
+commit_snapshot_deletion <- function(root, rels, id, reason, mode, verbose = 1L) {
+  git_run(root, c("add", "-A", "--", rels))
+  msg <- sprintf("delete snapshot %s (%s): %s", id, mode, reason)
+  ci  <- git_run(root, c("commit", "-m", msg, "--", rels))
+  if (!ci$ok) {
+    if (verbose >= 1L)
+      cli::cli_warn(c("git commit of the snapshot deletion failed (deletion still done).",
+                      "i" = paste(utils::tail(ci$out, 1L), collapse = " ")))
+    return(invisible(FALSE))
+  }
+  if (verbose >= 1L) cli::cli_alert_success("committed deletion of {.val {id}}.")
   invisible(TRUE)
 }
 #' @export
@@ -178,8 +142,8 @@ checkpoint <- function() {
 #'   values (`"dta"`, `"sas7bdat"`, `"xpt"`, `"sas"`) are written by
 #'   [save_snapshot()].
 #' @param tag Optional short tag for this extraction (e.g. `"DMC-2026-08"`),
-#'   recorded on the snapshot, its tables, the manifest and the audit ledger, and
-#'   used to annotate the git tag.
+#'   recorded on the snapshot, its tables and the manifest, and used to annotate
+#'   the git tag `snap/<tag>`.
 #' @param labels Optional named list of extra free-text metadata to record.
 #' @param git Git provenance mode; see [save_snapshot()].
 #' @param verbose Verbosity.
@@ -205,12 +169,12 @@ take_snapshot <- function(source, store = snapshot_store(create = TRUE),
 #'   `"sas7bdat"`, `"xpt"`, `"sas"` (a SAS import script).
 #' @param tag Optional short extraction tag (see [take_snapshot()]).
 #' @param labels Optional named list of extra free-text metadata.
-#' @param git Git provenance: `"record"` writes the repo's HEAD SHA into the
-#'   manifest; `"commit"` also commits the metadata (manifest + ledger, never the
-#'   payload) and creates an annotated `snap/<tag-or-id>` tag; `"off"` skips git.
-#'   Default `NULL` = `"commit"` when a `tag` is given, else `"record"`. Never
-#'   fails a snapshot: if git is unavailable or the store is not in a repo, it is
-#'   silently skipped.
+#' @param git Git provenance (git history is the audit trail). `"commit"` (the
+#'   default) commits the metadata (manifest only, never the payload), adding an
+#'   annotated `snap/<tag>` tag when a `tag` is given; `"record"` only writes the
+#'   repo's HEAD SHA into the manifest without committing; `"off"` skips git
+#'   entirely. Never fails a snapshot: if git is unavailable the commit is skipped
+#'   (with a warning when the store is not in a repository).
 #' @param verbose Verbosity.
 #' @return `x` with `id` attached, invisibly.
 #' @examples
@@ -260,16 +224,10 @@ save_snapshot <- function(x, store = snapshot_store(create = TRUE),
   yaml::write_yaml(manifest, tmp)
   file.rename(tmp, file.path(dir, manifest_filename))
 
-  append_ledger(store, drop_null(list(
-    event = "take", id = id, name = meta$name, tag = meta$tag,
-    created_utc = iso8601(now), user = unname(Sys.info()[["user"]]),
-    tables = lapply(tbl_meta, function(t) t$files$rds$sha256 %||% t$files$csv$sha256)
-  )))
-
-  # Git provenance: record the code HEAD in the manifest, and (commit mode) commit
-  # the METADATA ONLY (manifest + ledger, never payload) and annotate a tag.
-  git_mode <- match.arg(git %||% if (!is.null(meta$tag)) "commit" else "record",
-                        c("record", "commit", "off"))
+  # Git is the audit trail: record the code HEAD in the manifest and (commit mode,
+  # the default) commit the METADATA ONLY (manifest, never payload), tagging only
+  # when the extraction carries an explicit tag.
+  git_mode <- match.arg(git %||% "commit", c("commit", "record", "off"))
   if (git_mode != "off" && git_available()) {
     root <- git_root(store)
     if (!is.na(root)) {
@@ -279,8 +237,11 @@ save_snapshot <- function(x, store = snapshot_store(create = TRUE),
       yaml::write_yaml(drop_null(manifest), tmp2)
       file.rename(tmp2, file.path(dir, manifest_filename))
       if (git_mode == "commit")
-        commit_snapshot_metadata(root, c(file.path(dir, manifest_filename), ledger_path(store)),
+        commit_snapshot_metadata(root, file.path(dir, manifest_filename),
                                  id, meta$tag, verbose)
+    } else if (git_mode == "commit" && verbose >= 1L) {
+      cli::cli_warn(c("The snapshot store is not inside a git repository.",
+                      "i" = "No git audit commit was made. Put the store under git for an audit trail, or pass {.code git = \"off\"} to silence this."))
     }
   }
 
@@ -488,11 +449,15 @@ verify_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0
 #' `deletion-note.yml` alongside it capturing the `reason`. `mode = "destroy"`
 #' removes the directory outright.
 #' @param which Snapshot selector.
-#' @param reason Free-text reason (required; recorded in `deletion-note.yml`
-#'   for a retired snapshot).
+#' @param reason Free-text reason (required; recorded in the git deletion commit
+#'   and, for a retired snapshot, in `deletion-note.yml`).
 #' @param store Snapshot store directory.
 #' @param mode `"retire"` (move to `_deleted/`, keeping the manifest) or
 #'   `"destroy"` (remove).
+#' @param git Git provenance for the deletion: `"commit"` (the default) commits
+#'   the metadata change (the manifest's removal, plus the retained
+#'   `deletion-note.yml`) as the audit record; `"off"` skips git. Never fails the
+#'   deletion.
 #' @param verbose Verbosity.
 #' @return The deleted id, invisibly.
 #' @examples
@@ -500,31 +465,48 @@ verify_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0
 #' delete_snapshot("latest", reason = "duplicate extraction")
 #' }
 #' @export
-delete_snapshot <- function(which, reason, store = snapshot_store(verbose = 0L),
-                            mode = c("retire", "destroy"), verbose = 2L) {
+delete_snapshot <- function(which, reason = NULL, store = snapshot_store(verbose = 0L),
+                            mode = c("retire", "destroy"),
+                            git = c("commit", "off"), verbose = 2L) {
   mode <- match.arg(mode)
-  if (!is_string(reason) || !nzchar(reason))
-    cli::cli_abort("{.arg reason} is required (recorded in the audit ledger).")
+  git  <- match.arg(git)
+  if (!is_string(reason) || !nzchar(trimws(reason)))
+    cli::cli_abort(c("{.arg reason} is required.",
+                     "i" = "It is recorded in the git deletion commit (the audit trail).",
+                     "x" = "Nothing was deleted."))
   id <- resolve_snapshot_which(which, store); dir <- file.path(store, id)
-  # Record the deletion in the append-only ledger BEFORE removing anything, so a
-  # destroy can never erase the only trace that the snapshot existed.
-  append_ledger(store, list(
-    event = mode, id = id, reason = reason,
-    deleted_utc = iso8601(), user = unname(Sys.info()[["user"]])
-  ))
+  old_manifest <- file.path(dir, manifest_filename)
+  # Resolve the manifest's path relative to the repo BEFORE removing it, so the
+  # deletion commit can stage it (relative_to needs the file to still exist).
+  root <- if (git == "commit" && git_available()) git_root(store) else NA_character_
+  rels <- if (!is.na(root) && file.exists(old_manifest)) relative_to(old_manifest, root) else character(0)
+
   Sys.chmod(list.files(dir, recursive = TRUE, full.names = TRUE, include.dirs = TRUE), "0777")
   Sys.chmod(dir, "0777")
   if (mode == "retire") {
     dest <- file.path(store, "_deleted"); dir.create(dest, showWarnings = FALSE)
     retired <- file.path(dest, id)
     file.rename(dir, retired)
+    note <- file.path(retired, "deletion-note.yml")
     yaml::write_yaml(
       list(id = id, deleted_utc = iso8601(), mode = mode, reason = reason,
            user = unname(Sys.info()[["user"]])),
-      file.path(retired, "deletion-note.yml")
+      note
     )
+    if (!is.na(root))
+      rels <- c(rels, relative_to(file.path(retired, manifest_filename), root),
+                relative_to(note, root))
   } else {
     unlink(dir, recursive = TRUE, force = TRUE)
+  }
+  # Git is the audit trail: commit the metadata change so the deletion is recorded
+  # even for a destroy (which removes the manifest). Never fails the deletion.
+  if (git == "commit" && git_available()) {
+    if (!is.na(root) && length(rels))
+      commit_snapshot_deletion(root, rels, id, reason, mode, verbose)
+    else if (is.na(root) && verbose >= 1L)
+      cli::cli_warn(c("The snapshot store is not inside a git repository.",
+                      "i" = "No git audit commit was made for this deletion."))
   }
   if (verbose >= 1L) cli::cli_alert_success("snapshot {.val {id}} {mode}d.")
   invisible(id)

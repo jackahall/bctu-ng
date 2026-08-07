@@ -48,20 +48,40 @@ test_that("with no project and no explicit store, take_snapshot errors (never gu
   )
 })
 
-test_that("the append-only ledger records takes and deletes, and its hash chain verifies", {
-  store <- withr::local_tempdir()
-  s1 <- take_snapshot(datasource_example("redcap", n = 5L, seed = 1L), store = store, verbose = 0L)
-  s2 <- take_snapshot(datasource_example("redcap", n = 6L, seed = 2L), store = store, verbose = 0L)
-  led <- read_ledger(store)
-  expect_length(led, 2L)
-  expect_equal(vapply(led, function(r) r$event, ""), c("take", "take"))
-  expect_true(verify_ledger(store)$ok)
+test_that("every take and every delete commits the metadata to git (audit trail)", {
+  skip_if(!nzchar(Sys.which("git")), "git not available")
+  repo <- withr::local_tempdir()
+  run <- function(...) system2("git", c("-C", repo, ...), stdout = FALSE, stderr = FALSE)
+  run("init", "-q"); run("config", "user.email", "t@example.org"); run("config", "user.name", "t")
+  writeLines("x", file.path(repo, "README")); run("add", "README"); run("commit", "-qm", "init")
+  store <- file.path(repo, "Data", "Snapshots"); dir.create(store, recursive = TRUE)
+  commits <- function() length(system2("git", c("-C", repo, "log", "--oneline"), stdout = TRUE))
+  base <- commits()
 
-  delete_snapshot(attr(s2, "id"), reason = "test", store = store, mode = "destroy", verbose = 0L)
-  led2 <- read_ledger(store)
-  expect_equal(led2[[3]]$event, "destroy")
-  expect_equal(led2[[3]]$reason, "test")
-  expect_true(verify_ledger(store)$ok)
+  s1 <- take_snapshot(datasource_example("redcap", n = 5L, seed = 1L), store = store, verbose = 0L)
+  expect_equal(commits(), base + 1L)                     # take committed metadata
+  msg <- system2("git", c("-C", repo, "log", "-1", "--pretty=%s"), stdout = TRUE)
+  expect_true(grepl(attr(s1, "id"), msg, fixed = TRUE))
+  # the commit carries the manifest, never a payload file
+  files <- system2("git", c("-C", repo, "show", "--name-only", "--pretty=format:", "HEAD"), stdout = TRUE)
+  files <- files[nzchar(files)]
+  expect_true(any(grepl("manifest\\.yml$", files)))
+  expect_false(any(grepl("\\.(rds|csv)$", files)))
+
+  delete_snapshot(attr(s1, "id"), reason = "test cleanup", store = store,
+                  mode = "destroy", verbose = 0L)
+  expect_equal(commits(), base + 2L)                     # delete committed too
+  dmsg <- system2("git", c("-C", repo, "log", "-1", "--pretty=%s"), stdout = TRUE)
+  expect_true(grepl("delete snapshot", dmsg, fixed = TRUE))
+  expect_true(grepl("test cleanup", dmsg, fixed = TRUE))
+})
+
+test_that("delete_snapshot requires a reason (plain-English error, nothing deleted)", {
+  store <- withr::local_tempdir()
+  s <- take_snapshot(datasource_example("redcap", n = 5L, seed = 1L),
+                     store = store, git = "off", verbose = 0L)
+  expect_error(delete_snapshot(attr(s, "id"), store = store, verbose = 0L), "is required")
+  expect_true(attr(s, "id") %in% list_snapshots(store))
 })
 
 test_that("unsafe table names are rejected", {

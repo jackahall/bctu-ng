@@ -31,8 +31,9 @@ src <- datasource_redcap(
   url      = "https://redcap.example.org/api/"
 )
 
-# 3. Take an immutable, timestamped snapshot. The location is announced, an
-#    audit-ledger record is written, and a manifest with a SHA-256 per table is saved.
+# 3. Take an immutable, timestamped snapshot. The location is announced, a manifest
+#    with a SHA-256 per table is saved, and the metadata is committed to git (the
+#    audit trail) when the store is inside the trial repository.
 snap <- take_snapshot(src)
 
 # 4. Load, verify, list, or delete snapshots.
@@ -60,8 +61,8 @@ as the reliable path.
 ## Tagging an extraction
 
 ```r
-# Marks the snapshot end to end (manifest, ledger, DVR/report), records the code
-# HEAD, commits the metadata, and creates an annotated snap/DMC-2026-08 git tag.
+# Marks the snapshot end to end (manifest, DVR/report), records the code HEAD,
+# commits the metadata, and creates an annotated snap/DMC-2026-08 git tag.
 snap <- take_snapshot(src, tag = "DMC-2026-08")
 ```
 
@@ -112,8 +113,8 @@ package_risk_report()         # riskmetric-based dependency risk scoring
 
 * Explicit configuration: one committed `bctu-project.yml` marker anchors all path
   resolution; bctu errors rather than guessing a location.
-* Human-readable records: manifests and the audit ledger are plain-text YAML.
-* Auditable: every extraction and deletion appends to an append-only, hash-chained
-  ledger; integrity is SHA-256 in the manifest; provenance is independent of the
-  trial git repository.
+* Human-readable records: manifests are plain-text YAML.
+* Auditable: git history is the audit trail: every extraction and deletion commits
+  the snapshot metadata (never the payload) to the trial repository, so the record
+  carries author, time and reason; integrity is SHA-256 in the manifest.
 * One canonical time policy (UTC snapshot ids, explicit-timezone data-cut dates).

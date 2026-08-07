@@ -6,22 +6,28 @@
 \usage{
 delete_snapshot(
   which,
-  reason,
+  reason = NULL,
   store = snapshot_store(verbose = 0L),
   mode = c("retire", "destroy"),
+  git = c("commit", "off"),
   verbose = 2L
 )
 }
 \arguments{
 \item{which}{Snapshot selector.}
 
-\item{reason}{Free-text reason (required; recorded in \code{deletion-note.yml}
-for a retired snapshot).}
+\item{reason}{Free-text reason (required; recorded in the git deletion commit
+and, for a retired snapshot, in \code{deletion-note.yml}).}
 
 \item{store}{Snapshot store directory.}
 
 \item{mode}{\code{"retire"} (move to \verb{_deleted/}, keeping the manifest) or
 \code{"destroy"} (remove).}
+
+\item{git}{Git provenance for the deletion: \code{"commit"} (the default) commits
+the metadata change (the manifest's removal, plus the retained
+\code{deletion-note.yml}) as the audit record; \code{"off"} skips git. Never fails the
+deletion.}
 
 \item{verbose}{Verbosity.}
 }

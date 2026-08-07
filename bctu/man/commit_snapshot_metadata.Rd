@@ -2,11 +2,13 @@
 % Please edit documentation in R/snapshot.R
 \name{commit_snapshot_metadata}
 \alias{commit_snapshot_metadata}
-\title{Commit a snapshot's metadata (manifest + ledger) and annotate a tag}
+\title{Commit a snapshot's metadata (manifest only, never payload) to the trial repo}
 \usage{
 commit_snapshot_metadata(root, meta_files, id, tag = NULL, verbose = 1L)
 }
 \description{
-Commit a snapshot's metadata (manifest + ledger) and annotate a tag
+Git history is the audit trail: every saved snapshot commits its manifest. An
+annotated \verb{snap/<tag>} tag is added only when the extraction carries an explicit
+\code{tag} (routine snapshots are not tagged, to avoid a tag per snapshot).
 }
 \keyword{internal}

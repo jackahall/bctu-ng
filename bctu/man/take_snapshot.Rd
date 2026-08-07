@@ -24,8 +24,8 @@ values (\code{"dta"}, \code{"sas7bdat"}, \code{"xpt"}, \code{"sas"}) are written
 \code{\link[=save_snapshot]{save_snapshot()}}.}
 
 \item{tag}{Optional short tag for this extraction (e.g. \code{"DMC-2026-08"}),
-recorded on the snapshot, its tables, the manifest and the audit ledger, and
-used to annotate the git tag.}
+recorded on the snapshot, its tables and the manifest, and used to annotate
+the git tag \verb{snap/<tag>}.}
 
 \item{labels}{Optional named list of extra free-text metadata to record.}
 
