@@ -373,6 +373,9 @@ datasource_sql <- function(server, database, tables = NULL, views_query = NULL,
                            name = NULL, ...) {
   if (missing(server) || !is_string(server)) cli::cli_abort("{.arg server} must be a single string.")
   if (missing(database) || !is_string(database)) cli::cli_abort("{.arg database} must be a single string.")
+  if (grepl("[;=\n\r]|[[:cntrl:]]", server) || grepl("[;=\n\r]|[[:cntrl:]]", database))
+    cli::cli_abort(c("{.arg server} and {.arg database} may not contain {.code ;}, {.code =}, newlines or control characters.",
+                     "i" = "Those characters would alter the ODBC connection string; pass extra connection options via {.fn sql_connection}."))
   if (is.null(tables) && is.null(views_query))
     cli::cli_abort(c("{.fn datasource_sql} needs either {.arg tables} or {.arg views_query}.",
                      "i" = "Give an explicit table/view vector, or a discovery query like {.code SELECT name FROM sys.views WHERE name LIKE 'vw%'}."))
@@ -384,7 +387,12 @@ datasource_sql <- function(server, database, tables = NULL, views_query = NULL,
   fetch <- function(creds, config, verbose = 2L, ...) {
     driver <- connector %||% odbc::odbc()
     args   <- connect_args %||% sql_odbc_arguments(config$server, config$database, conn)
-    con    <- do.call(DBI::dbConnect, c(list(driver), args))
+    con    <- tryCatch(
+      do.call(DBI::dbConnect, c(list(driver), args)),
+      error = function(e)
+        cli::cli_abort(c(
+          "Could not connect to the SQL database {.val {config$database}} on {.val {config$server}}.",
+          "i" = "Check the server, database, ODBC driver and credentials.")))
     on.exit(DBI::dbDisconnect(con), add = TRUE)
 
     to_load <- config$tables

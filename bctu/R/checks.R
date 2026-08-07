@@ -135,6 +135,15 @@ compare_dvp <- function(dvp, before, after) {
   b <- run_dvp(dvp, before)
   a <- run_dvp(dvp, after)
 
+  has_status <- function(d) is.data.frame(d) && "status" %in% names(d)
+  offenders <- unique(c(names(a)[vapply(a, has_status, logical(1))],
+                        names(b)[vapply(b, has_status, logical(1))]))
+  if (length(offenders))
+    cli::cli_abort(c(
+      "A check returned a reserved column named {.field status}: {.val {offenders}}.",
+      "i" = "{.fn compare_dvp} adds its own {.field status} column (new / unchanged / resolved).",
+      "x" = "Rename that column in your DVP (for example {.field query_status})."))
+
   checks <- union(names(a), names(b))
   out <- stats::setNames(vector("list", length(checks)), checks)
   for (nm in checks) {
@@ -266,14 +275,33 @@ write_findings_workbook <- function(sheets, path) {
   wb <- openxlsx::createWorkbook()
   used <- character(0)
   for (nm in names(sheets)) {
-    sheet <- substr(gsub("[^A-Za-z0-9_ -]", "_", nm), 1L, 31L)
-    while (sheet %in% used) sheet <- substr(paste0(sheet, "_"), 1L, 31L)
+    sheet <- unique_sheet_name(nm, used)
     used <- c(used, sheet)
     openxlsx::addWorksheet(wb, sheet)
     openxlsx::writeData(wb, sheet, as.data.frame(sheets[[nm]]))
   }
   openxlsx::saveWorkbook(wb, path, overwrite = FALSE)
   invisible(path)
+}
+
+#' Make an Excel-safe, unique worksheet name (<= 31 chars)
+#'
+#' Excel worksheet names are capped at 31 characters and cannot repeat. This
+#' sanitises the name and, on a clash, appends a numeric suffix that SHORTENS the
+#' stem so the result always changes and always stays within 31 characters (the
+#' naive "append and re-truncate" never terminates once the name is already 31).
+#' @keywords internal
+unique_sheet_name <- function(nm, used) {
+  base <- substr(gsub("[^A-Za-z0-9_ -]", "_", nm), 1L, 31L)
+  if (!nzchar(base)) base <- "sheet"
+  cand <- base
+  i <- 1L
+  while (cand %in% used) {
+    sfx  <- paste0("_", i)
+    cand <- paste0(substr(base, 1L, 31L - nchar(sfx)), sfx)
+    i <- i + 1L
+  }
+  cand
 }
 
 #' Drop checks with no findings

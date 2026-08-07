@@ -119,6 +119,15 @@ resolve_table_columns <- function(data, columns, align) {
   if (length(missing_cols))
     cli::cli_abort(c("These columns are not in {.arg data}: {.val {missing_cols}}.",
                      "i" = "Available columns: {.val {names(data)}}."))
+  # Duplicate names silently mis-map values (data[, "x"] returns the first "x"),
+  # so reject them rather than display the wrong column.
+  if (anyDuplicated(name))
+    cli::cli_abort(c("The displayed columns include duplicate names: {.val {unique(name[duplicated(name)])}}.",
+                     "i" = "Rename columns to be unique before tabulating."))
+  dup_src <- intersect(name, names(data)[duplicated(names(data))])
+  if (length(dup_src))
+    cli::cli_abort(c("{.arg data} has duplicate columns named {.val {dup_src}}.",
+                     "i" = "Column selection by name is ambiguous; rename them to be unique."))
 
   if (is.null(align)) {
     align <- vapply(name, function(nm) if (is.numeric(data[[nm]])) "right" else "left",
@@ -126,7 +135,10 @@ resolve_table_columns <- function(data, columns, align) {
   } else {
     if (length(align) != length(name))
       cli::cli_abort("{.arg align} must have one entry per displayed column ({length(name)}).")
-    align <- match.arg(align, c("left", "right", "center"), several.ok = TRUE)
+    bad_align <- setdiff(align, c("left", "right", "center"))
+    if (length(bad_align))
+      cli::cli_abort(c("{.arg align} values must be {.val left}, {.val right} or {.val center}.",
+                       "x" = "Invalid: {.val {unique(bad_align)}}."))
   }
   data.frame(name = name, label = label, align = unname(align),
              stringsAsFactors = FALSE)
@@ -147,6 +159,9 @@ normalise_group_headers <- function(group_headers, n_columns) {
       !all(c("label", "span") %in% names(group_headers)))
     cli::cli_abort("{.arg group_headers} must be a data frame with {.field label} and {.field span}, or a named integer vector.")
   group_headers$span <- as.integer(group_headers$span)
+  if (any(is.na(group_headers$span) | group_headers$span < 1L))
+    cli::cli_abort(c("Each group header span must be a whole number of at least 1.",
+                     "x" = "Got: {.val {group_headers$span}}."))
   if (sum(group_headers$span) != n_columns)
     cli::cli_abort(c("Group header spans must add up to the number of columns ({n_columns}).",
                      "x" = "They add up to {sum(group_headers$span)}."))

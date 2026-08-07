@@ -118,7 +118,8 @@ test_that("delete_snapshot can destroy outright", {
   delete_snapshot(id, reason = "unit-test cleanup", store = store,
                   mode = "destroy", verbose = 0L)
   expect_length(list_snapshots(store), 0L)
-  expect_false(dir.exists(file.path(store, "_deleted", id)))
+  expect_false(dir.exists(file.path(store, id)))                                   # payload removed
+  expect_true(file.exists(file.path(store, "_deleted", id, "deletion-note.yml")))  # tombstone kept
 })
 
 test_that("delete_snapshot requires a reason", {

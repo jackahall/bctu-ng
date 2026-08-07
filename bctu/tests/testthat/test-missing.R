@@ -74,5 +74,5 @@ test_that("snapshot export writes dta with Stata special missings, csv with code
   # the SAS script recodes the coded column
   script <- paste(readLines(sas), collapse = "\n")
   expect_match(script, "proc import")
-  expect_match(script, 'strip\\(age\\) = "UNK" then _bctu_age = .A')
+  expect_match(script, 'strip\\(age\\) = "UNK" then _bctu1 = .A')
 })

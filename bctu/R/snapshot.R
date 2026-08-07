@@ -61,6 +61,10 @@ git_dirty <- function(root) {
   r <- git_run(root, c("status", "--porcelain"))
   isTRUE(r$ok) && any(nzchar(r$out))
 }
+#' @keywords internal
+git_tracked <- function(root, path) {
+  git_run(root, c("ls-files", "--error-unmatch", "--", relative_to(path, root)))$ok
+}
 
 #' Commit a snapshot's metadata (manifest only, never payload) to the trial repo
 #'
@@ -86,9 +90,16 @@ commit_snapshot_metadata <- function(root, meta_files, id, tag = NULL, verbose =
   }
   if (!is.null(tag)) {
     tagname <- paste0("snap/", tag)
+    exists_already <- git_run(root, c("rev-parse", "-q", "--verify",
+                                      paste0("refs/tags/", tagname)))$ok
     tg <- git_run(root, c("tag", "-a", tagname, "-m", msg))
-    if (verbose >= 1L && !tg$ok)
-      cli::cli_warn("Committed metadata, but tag {.val {tagname}} could not be created (it may already exist).")
+    if (verbose >= 1L && !tg$ok) {
+      if (exists_already)
+        cli::cli_warn(c("Tag {.val {tagname}} already exists and still points at the earlier snapshot.",
+                        "i" = "This snapshot's metadata was committed, but the tag was NOT moved; use a distinct tag to mark it."))
+      else
+        cli::cli_warn("Committed metadata, but tag {.val {tagname}} could not be created.")
+    }
   }
   if (verbose >= 1L)
     cli::cli_alert_success("committed snapshot metadata for {.val {id}}{if (!is.null(tag)) paste0(' (tag ', tag, ')') else ''}.")
@@ -200,6 +211,12 @@ save_snapshot <- function(x, store = snapshot_store(create = TRUE),
   # collision-safe id: append -NN (never distort the recorded second)
   suffix <- 0L
   while (!dir.create(file.path(dir, "tables"), recursive = TRUE, showWarnings = FALSE)) {
+    # A failed dir.create means EITHER this id already exists (a same-second
+    # collision -> bump the suffix) OR the store cannot be written (a file, a
+    # missing/unwritable parent -> a real error, reported as such).
+    if (!dir.exists(dir))
+      cli::cli_abort(c("Could not create the snapshot directory {.file {dir}}.",
+                       "i" = "Check that {.file {store}} exists, is a directory, and is writable."))
     suffix <- suffix + 1L
     if (suffix > 99L) cli::cli_abort("Too many snapshots in the same second at {.file {store}}.")
     id <- sprintf("%s-%02d", snapshot_id(now), suffix); dir <- file.path(store, id)
@@ -212,6 +229,17 @@ save_snapshot <- function(x, store = snapshot_store(create = TRUE),
     stem <- paste(study, nm, id, sep = "_")   # self-identifying: <study>_<table>_<id>
     files <- write_snapshot_payload(x[[nm]], tdir, stem, formats, dir)
     tbl_meta[[nm]] <- list(n_rows = nrow(x[[nm]]), n_cols = ncol(x[[nm]]), files = files)
+  }
+  # Never leave a "saved" snapshot with no readable payload: if every requested
+  # format failed for a table (e.g. a column name the target format rejects),
+  # abort and clean up rather than return a broken snapshot.
+  empty_tbls <- names(tbl_meta)[vapply(tbl_meta, function(t) length(t$files) == 0L, logical(1))]
+  if (length(empty_tbls)) {
+    unlink(dir, recursive = TRUE, force = TRUE)
+    cli::cli_abort(c(
+      "No payload could be written for {.val {empty_tbls}} in any requested format ({.val {formats}}).",
+      "i" = "Include {.val rds} or {.val csv}, or fix the data (e.g. a column name the format rejects).",
+      "x" = "Nothing was saved."))
   }
 
   manifest <- drop_null(list(
@@ -452,8 +480,9 @@ verify_snapshot <- function(which = "latest", store = snapshot_store(verbose = 0
 #' @param reason Free-text reason (required; recorded in the git deletion commit
 #'   and, for a retired snapshot, in `deletion-note.yml`).
 #' @param store Snapshot store directory.
-#' @param mode `"retire"` (move to `_deleted/`, keeping the manifest) or
-#'   `"destroy"` (remove).
+#' @param mode `"retire"` (move to `_deleted/`, keeping the manifest and payload)
+#'   or `"destroy"` (remove the payload and manifest, leaving only a committed
+#'   `_deleted/<id>/deletion-note.yml` tombstone as the audit record).
 #' @param git Git provenance for the deletion: `"commit"` (the default) commits
 #'   the metadata change (the manifest's removal, plus the retained
 #'   `deletion-note.yml`) as the audit record; `"off"` skips git. Never fails the
@@ -479,7 +508,11 @@ delete_snapshot <- function(which, reason = NULL, store = snapshot_store(verbose
   # Resolve the manifest's path relative to the repo BEFORE removing it, so the
   # deletion commit can stage it (relative_to needs the file to still exist).
   root <- if (git == "commit" && git_available()) git_root(store) else NA_character_
-  rels <- if (!is.na(root) && file.exists(old_manifest)) relative_to(old_manifest, root) else character(0)
+  # Only stage the old manifest's removal if git actually tracked it; passing an
+  # untracked, now-deleted path to `git commit --` fails the whole commit. The
+  # deletion note (added below) is the guaranteed audit record.
+  rels <- if (!is.na(root) && file.exists(old_manifest) && git_tracked(root, old_manifest))
+            relative_to(old_manifest, root) else character(0)
 
   Sys.chmod(list.files(dir, recursive = TRUE, full.names = TRUE, include.dirs = TRUE), "0777")
   Sys.chmod(dir, "0777")
@@ -497,7 +530,19 @@ delete_snapshot <- function(which, reason = NULL, store = snapshot_store(verbose
       rels <- c(rels, relative_to(file.path(retired, manifest_filename), root),
                 relative_to(note, root))
   } else {
+    # destroy: write a metadata tombstone BEFORE removing the payload, so the
+    # destruction is always recorded in git even if the snapshot itself was never
+    # committed (git can only record the removal of something it already tracked).
+    dest <- file.path(store, "_deleted"); dir.create(dest, showWarnings = FALSE)
+    tomb <- file.path(dest, id); dir.create(tomb, showWarnings = FALSE)
+    note <- file.path(tomb, "deletion-note.yml")
+    yaml::write_yaml(
+      list(id = id, deleted_utc = iso8601(), mode = mode, reason = reason,
+           user = unname(Sys.info()[["user"]])),
+      note
+    )
     unlink(dir, recursive = TRUE, force = TRUE)
+    if (!is.na(root)) rels <- c(rels, relative_to(note, root))
   }
   # Git is the audit trail: commit the metadata change so the deletion is recorded
   # even for a destroy (which removes the manifest). Never fails the deletion.

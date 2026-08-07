@@ -21,8 +21,9 @@ and, for a retired snapshot, in \code{deletion-note.yml}).}
 
 \item{store}{Snapshot store directory.}
 
-\item{mode}{\code{"retire"} (move to \verb{_deleted/}, keeping the manifest) or
-\code{"destroy"} (remove).}
+\item{mode}{\code{"retire"} (move to \verb{_deleted/}, keeping the manifest and payload)
+or \code{"destroy"} (remove the payload and manifest, leaving only a committed
+\verb{_deleted/<id>/deletion-note.yml} tombstone as the audit record).}
 
 \item{git}{Git provenance for the deletion: \code{"commit"} (the default) commits
 the metadata change (the manifest's removal, plus the retained

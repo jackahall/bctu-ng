@@ -148,6 +148,9 @@ validate_tables <- function(tables) {
   if (is.data.frame(tables)) tables <- list(records = tables)
   if (!is.list(tables) || is.null(names(tables)) || any(!nzchar(names(tables))))
     cli::cli_abort("A source's fetch() must return a NAMED list of data frames (one per table).")
+  if (anyDuplicated(names(tables)))
+    cli::cli_abort(c("A source's fetch() returned duplicate table names: {.val {unique(names(tables)[duplicated(names(tables))])}}.",
+                     "i" = "Each table needs a distinct name; a duplicate would be unreachable and overwrite its twin."))
   ok <- vapply(tables, is.data.frame, logical(1))
   if (!all(ok))
     cli::cli_abort("Every element returned by fetch() must be a data frame; bad: {.val {names(tables)[!ok]}}.")

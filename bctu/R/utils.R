@@ -41,7 +41,10 @@ parse_snapshot_id <- function(id) {
                      "i" = "Expected {.code YYYY-MM-DDTHHMMSSZ} (UTC), optionally with a {.code -NN} suffix."))
   base_id <- sub("-[0-9]{2}$", "", id)
   t <- as.POSIXct(strptime(base_id, "%Y-%m-%dT%H%M%SZ", tz = "UTC"), tz = "UTC")
-  if (is.na(t)) cli::cli_abort("Snapshot id {.val {id}} is not a real UTC time.")
+  # strptime silently rolls over out-of-range fields (e.g. hour 24 -> next day), so
+  # require the parsed time to format back to the same string before trusting it.
+  if (is.na(t) || !identical(format(t, "%Y-%m-%dT%H%M%SZ", tz = "UTC"), base_id))
+    cli::cli_abort("Snapshot id {.val {id}} is not a real UTC time.")
   t
 }
 

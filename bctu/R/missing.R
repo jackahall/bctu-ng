@@ -40,6 +40,9 @@ special_missing <- function(...) {
     tag  <- if (is.character(rhs)) rhs else if (is.symbol(rhs)) as.character(rhs) else NA_character_
     if (is.na(code) || !nzchar(code))
       cli::cli_abort("The left side of mapping {i} must be a code like {.code UNK}.")
+    if (grepl("[\"\n\r\t]|[[:cntrl:]]", code))
+      cli::cli_abort(c("The code {.val {code}} contains a quote, newline, or control character.",
+                       "i" = "Codes are written into the CSV and a generated SAS script, so they must be plain text."))
     if (is.na(tag) || !grepl("^[a-z]$", tag))
       cli::cli_abort(c("The tag for code {.val {code}} must be a single lowercase letter a-z.",
                        "i" = "SAS/Stata special missing values are {.code .A}-{.code .Z} / {.code .a}-{.code .z}."))
@@ -139,7 +142,10 @@ restore_codes_frame <- function(tbl) {
     v <- tbl[[col]]
     if (!has_tagged_na(v)) next
     tg  <- haven::na_tag(v)
-    out <- format(v, trim = TRUE, scientific = FALSE)
+    # digits = 15 preserves full double precision in the readable CSV (the default
+    # 7 significant digits silently truncates coded numeric columns, which the SAS
+    # import then reads back as the "reliable" copy).
+    out <- format(v, trim = TRUE, scientific = FALSE, digits = 15)
     out[is.na(v) & is.na(tg)] <- NA
     for (i in which(!is.na(tg))) {
       code <- map$code[map$tag == tg[i]]
@@ -187,8 +193,10 @@ sas_import_script <- function(tbl, csv_name, dataset) {
   )
   if (length(coded) && !is.null(map)) {
     L <- c(L, "", sprintf("data work.%s;", dataset), sprintf("  set work.%s;", dataset))
+    k <- 0L
     for (col in coded) {
-      nv <- paste0("_bctu_", col)
+      k <- k + 1L
+      nv <- sprintf("_bctu%d", k)   # short temp name: always a valid <=32-char SAS name
       L <- c(L, sprintf("  length %s 8;", nv))
       for (j in seq_len(nrow(map)))
         L <- c(L, sprintf("  %sif strip(%s) = \"%s\" then %s = .%s;",
