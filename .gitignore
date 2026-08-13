@@ -3,3 +3,5 @@
 .RData
 *.tar.gz
 sandbox/
+AUDIT_*.md
+ROBUSTNESS_AUDIT.md
