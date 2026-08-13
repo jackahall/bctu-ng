@@ -412,3 +412,19 @@ test_that("the workbook is the delivered record: no per-check CSVs by default", 
   expect_false(file.exists(file.path(full, "all_records.txt")))
   expect_false(file.exists(file.path(full, "checks_index.csv")))
 })
+
+test_that("an explicitly named empty DVP is a valid zero-check report; a bare list() is not", {
+  skip_if_not_installed("openxlsx")
+  out <- run_dvp(function(data) stats::setNames(list(), character(0)), NULL)
+  expect_length(out, 0L)
+  expect_error(run_dvp(function(data) list(), NULL), "named list")
+
+  store <- withr::local_tempdir()
+  snap <- take_snapshot(datasource_example("redcap", n = 5L, seed = 1L),
+                        store = store, verbose = 0L)
+  res <- save_cdi(function(s) stats::setNames(list(), character(0)), snap,
+                  paths = withr::local_tempdir(), verbose = 0L)
+  man <- yaml::read_yaml(file.path(res$dirs[[1]], "manifest.yml"))
+  expect_equal(man$total_findings, 0L)
+  expect_length(man$checks, 0L)
+})

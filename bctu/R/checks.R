@@ -42,14 +42,18 @@ run_dvp <- function(dvp, data) {
 
   findings <- dvp(data)
 
+  # An explicitly named EMPTY list (names character(0), e.g. a placeholder DVP
+  # with no checks defined yet) is valid and yields a zero-check report; a bare
+  # list() with NULL names is still rejected as a likely mistake.
   ok_named_list <- is.list(findings) && !is.data.frame(findings) &&
-    length(findings) > 0L && !is.null(names(findings)) &&
+    !is.null(names(findings)) &&
     all(nzchar(names(findings))) && !anyDuplicated(names(findings))
   if (!ok_named_list)
     cli::cli_abort(c(
       "A DVP function must return a named list of findings, one element per check.",
       "x" = "Each element needs a non-empty, unique name (used as the worksheet name).",
-      "i" = "For example: {.code function(data) list(weight_range = ..., visit_order = ...)}."))
+      "i" = "For example: {.code function(data) list(weight_range = ..., visit_order = ...)}.",
+      "i" = "A DVP with no checks yet returns {.code stats::setNames(list(), character(0))}."))
 
   for (nm in names(findings)) {
     el <- findings[[nm]]

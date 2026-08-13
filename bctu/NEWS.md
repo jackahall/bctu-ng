@@ -1,3 +1,12 @@
+# bctu 0.16.6
+
+## Fixes
+
+* A DVP returning an explicitly named empty list (`setNames(list(),
+  character(0))`, the documented placeholder for a trial with no checks
+  defined yet) is accepted again and yields a zero-check report, as under the
+  original package. A bare `list()` with `NULL` names is still rejected.
+
 # bctu 0.16.5
 
 ## Fixes
