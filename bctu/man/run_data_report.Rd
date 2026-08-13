@@ -14,6 +14,8 @@ run_data_report(
   site_col = NULL,
   version = NULL,
   operator = NULL,
+  check_info = NULL,
+  query_column = TRUE,
   write_xlsx = TRUE,
   verbose = 2L
 )
@@ -41,6 +43,25 @@ split is written.}
 \item{version}{Optional DVP version string, recorded and added to file names.}
 
 \item{operator}{Person issuing the report (recorded); default the OS user.}
+
+\item{check_info}{Optional data frame describing the checks in DM-facing
+language: columns \code{check} (matching the names the DVP returns) and \code{query}
+(the text a data manager acts on), plus optional \code{section} (free text) and
+\code{critical} (logical). When given, a \code{checks_index} sheet leads every
+workbook (overall and per-site), \code{checks_index.csv}/\code{.txt} are written
+alongside the findings in every output directory, and each check's query,
+section and criticality are recorded in the manifest. The index lists
+every check in the table, including all-clear checks with no findings.
+When \code{NULL}, the DVP function may supply the same table itself via
+\code{attr(findings, "check_info")} on the list it returns; an explicit
+\code{check_info} argument wins over the attribute.}
+
+\item{query_column}{Prepend each check's query text as the first column of
+its finding rows (so the text travels with a row into a data manager's
+query log)? Default \code{TRUE} when check info is available. The column is
+added after any before/after comparison, so rewording a query never makes
+findings read as new or resolved. A check returning its own \code{query} column
+is an error while check info is in use.}
 
 \item{write_xlsx}{Also write Excel workbooks if \code{openxlsx} is available?}
 

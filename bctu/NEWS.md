@@ -1,3 +1,17 @@
+# bctu 0.16.0
+
+## New features
+
+* Per-check query text: `save_dvr()`/`save_cdi()`/`run_data_report()` gain
+  `check_info` (data frame: `check`, `query`, optional free-text `section` and
+  logical `critical`) and `query_column`. The engine writes a `checks_index`
+  sheet first in every workbook (overall and per-site), `checks_index.csv`/`.txt`
+  beside the findings in every output directory, prepends the query text as the
+  first column of each finding row (added after the before/after comparison, so
+  rewording a query never shows as new/resolved), and records query, section and
+  criticality per check in the manifest. A DVP function can carry the same table
+  itself via `attr(findings, "check_info")`; the explicit argument wins.
+
 # bctu 0.15.0
 
 Ground-up rebuild of the package, continuing the version sequence from 0.14.0.

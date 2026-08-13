@@ -201,3 +201,145 @@ test_that("write_report_set warns per check with findings that cannot be mapped 
                      site_col = "site", write_xlsx = FALSE),
     "could not be mapped to a site")
 })
+
+test_that("check_info writes the index, prepends the query column, and reaches the manifest", {
+  store   <- withr::local_tempdir()
+  out_dir <- withr::local_tempdir()
+
+  dvp <- function(data) {
+    r <- data$records
+    bad <- is.na(r$weight_kg) | r$weight_kg < 65 | r$weight_kg > 90
+    list(weight_range = data.frame(record_id = r$record_id[bad]),
+         never_fires  = data.frame())
+  }
+  info <- data.frame(
+    check    = c("weight_range", "never_fires"),
+    query    = c("Please confirm the recorded weight.",
+                 "Please confirm the visit date."),
+    section  = c("Baseline", "Baseline"),
+    critical = c(TRUE, FALSE))
+
+  snap <- take_snapshot(datasource_example("redcap", n = 40L, seed = 1L),
+                        store = store, verbose = 0L)
+  res <- save_dvr(dvp, snap, paths = out_dir, check_info = info,
+                  write_xlsx = FALSE, verbose = 0L)
+
+  full <- file.path(res$dirs[[1]], "full")
+  idx <- utils::read.csv(file.path(full, "checks_index.csv"))
+  expect_equal(idx$check, info$check)   # all checks listed, all-clear included
+  expect_true(file.exists(file.path(full, "checks_index.txt")))
+
+  found <- utils::read.csv(file.path(full, "weight_range.csv"))
+  expect_gt(nrow(found), 0L)
+  expect_equal(names(found)[1], "query")
+  expect_equal(unique(found$query), "Please confirm the recorded weight.")
+
+  man <- yaml::read_yaml(file.path(res$dirs[[1]], "manifest.yml"))
+  wr <- Filter(function(chk) chk$name == "weight_range", man$checks)[[1]]
+  expect_equal(wr$query, "Please confirm the recorded weight.")
+  expect_equal(wr$section, "Baseline")
+  expect_true(wr$critical)
+})
+
+test_that("check_info attr fallback works and the explicit argument wins", {
+  store   <- withr::local_tempdir()
+  out_dir <- withr::local_tempdir()
+
+  info_attr <- data.frame(check = "all_records", query = "Attribute text.")
+  dvp <- function(data) {
+    findings <- list(all_records = data.frame(record_id = data$records$record_id))
+    attr(findings, "check_info") <- info_attr
+    findings
+  }
+  snap <- take_snapshot(datasource_example("redcap", n = 10L, seed = 1L),
+                        store = store, verbose = 0L)
+
+  res <- save_dvr(dvp, snap, paths = out_dir, write_xlsx = FALSE, verbose = 0L)
+  found <- utils::read.csv(file.path(res$dirs[[1]], "full", "all_records.csv"))
+  expect_equal(unique(found$query), "Attribute text.")
+
+  out2 <- withr::local_tempdir()
+  info_arg <- data.frame(check = "all_records", query = "Argument text.")
+  res2 <- save_dvr(dvp, snap, paths = out2, check_info = info_arg,
+                   write_xlsx = FALSE, verbose = 0L)
+  found2 <- utils::read.csv(file.path(res2$dirs[[1]], "full", "all_records.csv"))
+  expect_equal(unique(found2$query), "Argument text.")
+})
+
+test_that("the query column is added after comparison, so it never disturbs status", {
+  store   <- withr::local_tempdir()
+  out_dir <- withr::local_tempdir()
+
+  dvp <- function(data) list(all_records =
+    data.frame(record_id = data$records$record_id))
+  info <- data.frame(check = "all_records", query = "Confirm the record.")
+
+  snapA <- take_snapshot(datasource_example("redcap", n = 10L, seed = 1L),
+                         store = store, verbose = 0L)
+  snapB <- take_snapshot(datasource_example("redcap", n = 10L, seed = 1L),
+                         store = store, verbose = 0L)
+
+  res <- save_dvr(dvp, after = snapB, before = snapA, paths = out_dir,
+                  check_info = info, write_xlsx = FALSE, verbose = 0L)
+  found <- utils::read.csv(file.path(res$dirs[[1]], "full", "all_records.csv"))
+  expect_equal(names(found)[1], "query")
+  expect_true(all(found$status == "unchanged"))
+})
+
+test_that("a check returning its own query column errors while check_info is in use", {
+  store <- withr::local_tempdir()
+  dvp <- function(data) list(clash =
+    data.frame(record_id = data$records$record_id, query = "mine"))
+  info <- data.frame(check = "clash", query = "Engine text.")
+  snap <- take_snapshot(datasource_example("redcap", n = 5L, seed = 1L),
+                        store = store, verbose = 0L)
+  expect_error(
+    save_dvr(dvp, snap, paths = withr::local_tempdir(), check_info = info,
+             write_xlsx = FALSE, verbose = 0L),
+    "reserved column")
+})
+
+test_that("check_info is validated and partial annotation warns", {
+  store <- withr::local_tempdir()
+  dvp <- function(data) list(all_records =
+    data.frame(record_id = data$records$record_id))
+  snap <- take_snapshot(datasource_example("redcap", n = 5L, seed = 1L),
+                        store = store, verbose = 0L)
+  run <- function(info) save_dvr(dvp, snap, paths = withr::local_tempdir(),
+                                 check_info = info, write_xlsx = FALSE, verbose = 0L)
+
+  expect_error(run(list(check = "a")), "must be a data frame")
+  expect_error(run(data.frame(check = c("a", "a"), query = c("x", "y"))), "Duplicate")
+  expect_error(run(data.frame(check = "all_records", query = " ")), "non-empty text")
+  expect_error(run(data.frame(check = "all_records", query = "x", critical = "yes")),
+               "logical")
+  expect_warning(run(data.frame(check = c("all_records", "ghost"),
+                                query = c("x", "y"))), "matching no check")
+})
+
+test_that("checks_index leads every workbook, per-site included", {
+  skip_if_not_installed("openxlsx")
+  store   <- withr::local_tempdir()
+  out_dir <- withr::local_tempdir()
+
+  snap <- take_snapshot(datasource_example("redcap", n = 20L, seed = 1L),
+                        store = store, verbose = 0L)
+  snap$records$site <- rep(c("Site_A", "Site_B"), length.out = nrow(snap$records))
+
+  dvp <- function(data) list(all_records =
+    data.frame(record_id = data$records$record_id))
+  info <- data.frame(check = "all_records", query = "Confirm the record.")
+
+  res <- save_dvr(dvp, snap, paths = out_dir, id_col = "record_id",
+                  site_col = "site", check_info = info, write_xlsx = TRUE,
+                  verbose = 0L)
+
+  full <- file.path(res$dirs[[1]], "full")
+  master <- list.files(full, pattern = "\\.xlsx$", full.names = TRUE)[1]
+  expect_equal(openxlsx::getSheetNames(master)[1], "checks_index")
+
+  site_wb <- list.files(file.path(full, "sites", "Site_A"),
+                        pattern = "\\.xlsx$", full.names = TRUE)[1]
+  expect_equal(openxlsx::getSheetNames(site_wb)[1], "checks_index")
+  expect_true(file.exists(file.path(full, "sites", "Site_A", "checks_index.csv")))
+})

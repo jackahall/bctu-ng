@@ -12,7 +12,8 @@ write_report_set(
   id_col = "record_id",
   site_col = NULL,
   write_xlsx = TRUE,
-  before_snapshot = NULL
+  before_snapshot = NULL,
+  check_info = NULL
 )
 }
 \arguments{
@@ -31,6 +32,10 @@ writes the overall workbook only.}
 
 \item{before_snapshot}{Optional earlier snapshot, unioned with \code{snapshot}
 for site lookup (see \code{\link[=resolve_finding_sites]{resolve_finding_sites()}}).}
+
+\item{check_info}{Optional validated check-info table; when given, the
+checks index (sheet, CSV and TXT) is written with this set and every
+per-site output, so query text always accompanies the findings.}
 }
 \value{
 Invisibly, the directory.

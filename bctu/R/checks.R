@@ -160,7 +160,78 @@ compare_dvp <- function(dvp, before, after) {
 
     out[[nm]] <- bind_findings(current, resolved)
   }
+  attr(out, "check_info") <- attr(a, "check_info") %||% attr(b, "check_info")
   out
+}
+
+# --- per-check query text (check info) --------------------------------------
+#' Validate a check-info table (per-check query text and labels)
+#'
+#' A check-info table describes the checks in DM-facing language: one row per
+#' check with the query text a data manager acts on, plus optional grouping and
+#' criticality labels. Required columns: `check` (unique, matching the names the
+#' DVP function returns) and `query` (non-empty text). Optional columns:
+#' `section` (free text) and `critical` (logical), settable independently.
+#' Checks with findings but no info row, and info rows matching no check, are
+#' warned about (not errors), so a partially annotated DVP still reports.
+#' @param info A data frame as described above.
+#' @param check_names The check names the DVP produced this run.
+#' @return `info`, with columns ordered `check`, `section`, `critical`, `query`
+#'   (those present), row order preserved.
+#' @keywords internal
+validate_check_info <- function(info, check_names) {
+  if (!is.data.frame(info) || !all(c("check", "query") %in% names(info)))
+    cli::cli_abort(c(
+      "{.arg check_info} must be a data frame with columns {.field check} and {.field query}.",
+      "i" = "Optional columns: {.field section} (text) and {.field critical} (logical)."))
+  chk <- as.character(info$check); qry <- as.character(info$query)
+  if (anyNA(chk) || !all(nzchar(trimws(chk))))
+    cli::cli_abort("Every {.field check} in {.arg check_info} must be a non-empty name.")
+  if (anyDuplicated(chk))
+    cli::cli_abort("Duplicate {.field check} name{?s} in {.arg check_info}: {.val {unique(chk[duplicated(chk)])}}.")
+  if (anyNA(qry) || !all(nzchar(trimws(qry))))
+    cli::cli_abort("Every {.field query} in {.arg check_info} must be non-empty text.")
+  if ("critical" %in% names(info) && !is.logical(info$critical))
+    cli::cli_abort("{.field critical} in {.arg check_info} must be logical (TRUE/FALSE).")
+
+  missing_info <- setdiff(check_names, chk)
+  if (length(missing_info))
+    cli::cli_warn(c("Check{?s} with no {.arg check_info} row: {.val {missing_info}}.",
+                    "i" = "Their findings are written without query text."))
+  unknown <- setdiff(chk, check_names)
+  if (length(unknown))
+    cli::cli_warn(c("{.arg check_info} row{?s} matching no check this run: {.val {unknown}}.",
+                    "i" = "Kept in the index (an all-clear check still belongs in the catalogue)."))
+
+  ord <- intersect(c("check", "section", "critical", "query"), names(info))
+  info[c(ord, setdiff(names(info), ord))]
+}
+
+#' Prepend the query text as the first column of each finding frame
+#'
+#' The query travels with the row, so a data manager filtering or copying
+#' findings (especially from a per-site workbook) keeps the DM-facing text next
+#' to the record. Added AFTER any before/after comparison, so editing a query's
+#' wording never makes findings read as new/resolved.
+#' @param sheets Named list of findings frames.
+#' @param info A validated check-info table.
+#' @return `sheets` with a `query` first column on every non-empty frame whose
+#'   check has an info row.
+#' @keywords internal
+add_query_column <- function(sheets, info) {
+  clash <- names(sheets)[vapply(sheets, function(d) "query" %in% names(d), logical(1))]
+  if (length(clash))
+    cli::cli_abort(c(
+      "Check{?s} {.val {clash}} returned a reserved column named {.field query}.",
+      "i" = "With {.arg check_info}, the engine adds its own {.field query} column.",
+      "x" = "Rename that column in your DVP (for example {.field query_status})."))
+  for (nm in names(sheets)) {
+    d <- sheets[[nm]]
+    row <- match(nm, info$check)
+    if (nrow(d) == 0L || is.na(row)) next
+    sheets[[nm]] <- cbind(query = as.character(info$query[row]), d)
+  }
+  sheets
 }
 
 # --- snapshot fingerprint ---------------------------------------------------
@@ -262,10 +333,13 @@ write_findings_readable <- function(sheets, dir) {
 #' Excel's 31-character limit (de-duplicated if trimming collides).
 #' @param sheets A named list of findings data frames.
 #' @param path Workbook path (`.xlsx`).
+#' @param index Optional check-info table written as a leading `checks_index`
+#'   worksheet (query text catalogue; no counts, so it is identical between a
+#'   full and an update set).
 #' @return Invisibly, the path (or `NULL` if `openxlsx` is unavailable or there
 #'   is nothing to write).
 #' @export
-write_findings_workbook <- function(sheets, path) {
+write_findings_workbook <- function(sheets, path, index = NULL) {
   if (!length(sheets)) return(invisible(NULL))
   if (!requireNamespace("openxlsx", quietly = TRUE)) {
     cli::cli_warn(c("{.pkg openxlsx} is not installed; skipping the Excel workbook.",
@@ -274,6 +348,11 @@ write_findings_workbook <- function(sheets, path) {
   }
   wb <- openxlsx::createWorkbook()
   used <- character(0)
+  if (!is.null(index)) {
+    openxlsx::addWorksheet(wb, "checks_index")
+    openxlsx::writeData(wb, "checks_index", as.data.frame(index))
+    used <- "checks_index"
+  }
   for (nm in names(sheets)) {
     sheet <- unique_sheet_name(nm, used)
     used <- c(used, sheet)
@@ -282,6 +361,24 @@ write_findings_workbook <- function(sheets, path) {
   }
   openxlsx::saveWorkbook(wb, path, overwrite = FALSE)
   invisible(path)
+}
+
+#' Write the checks index (per-check query text) as CSV and TXT
+#'
+#' One catalogue of the DVP's checks in DM-facing language, written alongside
+#' the findings in every report set and per-site directory, so query text is
+#' never stranded away from the findings it explains. Lists every check in the
+#' info table, including all-clear checks with no findings this run.
+#' @param info A validated check-info table (see [validate_check_info()]).
+#' @param dir Directory to write into.
+#' @return Invisibly, the directory.
+#' @keywords internal
+write_checks_index <- function(info, dir) {
+  df <- as.data.frame(info)
+  utils::write.csv(df, file.path(dir, "checks_index.csv"), row.names = FALSE, na = "")
+  writeLines(utils::capture.output(print(df, row.names = FALSE)),
+             file.path(dir, "checks_index.txt"))
+  invisible(dir)
 }
 
 #' Make an Excel-safe, unique worksheet name (<= 31 chars)
@@ -335,18 +432,24 @@ nonempty_checks <- function(sheets) {
 #' @param write_xlsx Write Excel workbooks (needs `openxlsx`)?
 #' @param before_snapshot Optional earlier snapshot, unioned with `snapshot`
 #'   for site lookup (see [resolve_finding_sites()]).
+#' @param check_info Optional validated check-info table; when given, the
+#'   checks index (sheet, CSV and TXT) is written with this set and every
+#'   per-site output, so query text always accompanies the findings.
 #' @return Invisibly, the directory.
 #' @export
 write_report_set <- function(sheets, snapshot, dir, base_name,
                              id_col = "record_id", site_col = NULL,
-                             write_xlsx = TRUE, before_snapshot = NULL) {
+                             write_xlsx = TRUE, before_snapshot = NULL,
+                             check_info = NULL) {
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   filled <- nonempty_checks(sheets)
 
   write_findings_readable(sheets, dir)
+  if (!is.null(check_info)) write_checks_index(check_info, dir)
 
   if (isTRUE(write_xlsx) && length(filled))
-    write_findings_workbook(filled, file.path(dir, paste0(base_name, ".xlsx")))
+    write_findings_workbook(filled, file.path(dir, paste0(base_name, ".xlsx")),
+                            index = check_info)
 
   if (!is.null(site_col) && length(filled)) {
     snapshots <- if (is.null(before_snapshot)) list(snapshot) else list(before_snapshot, snapshot)
@@ -373,9 +476,11 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
       sdir <- file.path(dir, "sites", safe_site)
       dir.create(sdir, recursive = TRUE, showWarnings = FALSE)
       write_findings_readable(per_check, sdir)
+      if (!is.null(check_info)) write_checks_index(check_info, sdir)
       if (isTRUE(write_xlsx))
         write_findings_workbook(per_check,
-          file.path(sdir, paste0(base_name, "_", safe_site, ".xlsx")))
+          file.path(sdir, paste0(base_name, "_", safe_site, ".xlsx")),
+          index = check_info)
     }
   }
   invisible(dir)
@@ -406,6 +511,23 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
 #'   split is written.
 #' @param version Optional DVP version string, recorded and added to file names.
 #' @param operator Person issuing the report (recorded); default the OS user.
+#' @param check_info Optional data frame describing the checks in DM-facing
+#'   language: columns `check` (matching the names the DVP returns) and `query`
+#'   (the text a data manager acts on), plus optional `section` (free text) and
+#'   `critical` (logical). When given, a `checks_index` sheet leads every
+#'   workbook (overall and per-site), `checks_index.csv`/`.txt` are written
+#'   alongside the findings in every output directory, and each check's query,
+#'   section and criticality are recorded in the manifest. The index lists
+#'   every check in the table, including all-clear checks with no findings.
+#'   When `NULL`, the DVP function may supply the same table itself via
+#'   `attr(findings, "check_info")` on the list it returns; an explicit
+#'   `check_info` argument wins over the attribute.
+#' @param query_column Prepend each check's query text as the first column of
+#'   its finding rows (so the text travels with a row into a data manager's
+#'   query log)? Default `TRUE` when check info is available. The column is
+#'   added after any before/after comparison, so rewording a query never makes
+#'   findings read as new or resolved. A check returning its own `query` column
+#'   is an error while check info is in use.
 #' @param write_xlsx Also write Excel workbooks if `openxlsx` is available?
 #' @param verbose Verbosity.
 #' @return Invisibly, a list with the report id, directories written, sheets,
@@ -418,9 +540,11 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
 #' @export
 save_dvr <- function(dvp, after, before = NULL, paths = getwd(),
                      id_col = "record_id", site_col = NULL, version = NULL,
-                     operator = NULL, write_xlsx = TRUE, verbose = 2L) {
+                     operator = NULL, check_info = NULL, query_column = TRUE,
+                     write_xlsx = TRUE, verbose = 2L) {
   run_data_report(dvp, after, before, paths, kind = "dvr", id_col = id_col,
                   site_col = site_col, version = version, operator = operator,
+                  check_info = check_info, query_column = query_column,
                   write_xlsx = write_xlsx, verbose = verbose)
 }
 
@@ -439,9 +563,11 @@ save_dvr <- function(dvp, after, before = NULL, paths = getwd(),
 #' @export
 save_cdi <- function(dvp, after, paths = getwd(), id_col = "record_id",
                      site_col = NULL, version = NULL, operator = NULL,
+                     check_info = NULL, query_column = TRUE,
                      write_xlsx = TRUE, verbose = 2L) {
   run_data_report(dvp, after, before = NULL, paths, kind = "cdi", id_col = id_col,
                   site_col = site_col, version = version, operator = operator,
+                  check_info = check_info, query_column = query_column,
                   write_xlsx = write_xlsx, verbose = verbose)
 }
 
@@ -456,6 +582,7 @@ save_cdi <- function(dvp, after, paths = getwd(), id_col = "record_id",
 run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
                             kind = c("dvr", "cdi"), id_col = "record_id",
                             site_col = NULL, version = NULL, operator = NULL,
+                            check_info = NULL, query_column = TRUE,
                             write_xlsx = TRUE, verbose = 2L) {
   kind <- match.arg(kind)
   paths <- as.character(paths)
@@ -466,6 +593,12 @@ run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
   compared <- !is.null(before)
 
   sheets <- if (compared) compare_dvp(dvp, before, after) else run_dvp(dvp, after)
+
+  info <- check_info %||% attr(sheets, "check_info")
+  if (!is.null(info)) {
+    info <- validate_check_info(info, names(sheets))
+    if (isTRUE(query_column)) sheets <- add_query_column(sheets, info)
+  }
 
   update_sheets <- NULL
   if (compared) {
@@ -483,6 +616,16 @@ run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
       rec$new       <- sum(df$status == "new")
       rec$unchanged <- sum(df$status == "unchanged")
       rec$resolved  <- sum(df$status == "resolved")
+    }
+    if (!is.null(info)) {
+      row <- match(nm, info$check)
+      if (!is.na(row)) {
+        rec$query <- as.character(info$query[row])
+        if ("section" %in% names(info) && !is.na(info$section[row]))
+          rec$section <- as.character(info$section[row])
+        if ("critical" %in% names(info) && !is.na(info$critical[row]))
+          rec$critical <- info$critical[row]
+      }
     }
     rec
   })
@@ -535,12 +678,12 @@ run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
 
     write_report_set(sheets, after, file.path(report_dir, "full"), base,
                      id_col = id_col, site_col = site_col, write_xlsx = write_xlsx,
-                     before_snapshot = before)
+                     before_snapshot = before, check_info = info)
     if (compared)
       write_report_set(update_sheets, after, file.path(report_dir, "update"),
                        paste0(base, "_Update"), id_col = id_col,
                        site_col = site_col, write_xlsx = write_xlsx,
-                       before_snapshot = before)
+                       before_snapshot = before, check_info = info)
     yaml::write_yaml(manifest, file.path(report_dir, manifest_filename))
     written_dirs <- c(written_dirs, report_dir)
   }

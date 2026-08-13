@@ -4,12 +4,16 @@
 \alias{write_findings_workbook}
 \title{Write a set of checks to one Excel workbook, one worksheet per check}
 \usage{
-write_findings_workbook(sheets, path)
+write_findings_workbook(sheets, path, index = NULL)
 }
 \arguments{
 \item{sheets}{A named list of findings data frames.}
 
 \item{path}{Workbook path (\code{.xlsx}).}
+
+\item{index}{Optional check-info table written as a leading \code{checks_index}
+worksheet (query text catalogue; no counts, so it is identical between a
+full and an update set).}
 }
 \value{
 Invisibly, the path (or \code{NULL} if \code{openxlsx} is unavailable or there
