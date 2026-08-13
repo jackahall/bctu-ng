@@ -265,23 +265,27 @@ report_trial_name <- function(snapshot) {
   sanitise_study_name(if (is.list(meta)) meta$name else NULL)
 }
 
-#' Site label for each finding row, looked up from one or more snapshots
+#' Site label for each finding row, from the findings themselves or a snapshot
 #'
-#' Findings carry only what the check selected, so sites are resolved from the
-#' snapshot(s): any table holding both `id_col` and `site_col` maps a record to
-#' a site. Pass both the `before` and `after` snapshots when comparing, so a
-#' `resolved` finding whose record was removed from `after` is still sited from
-#' `before`. Findings whose record has no site in any snapshot (or whose frame
-#' has no `id_col`) are labelled `NO_SITE` so they are never silently dropped
-#' from the split.
+#' A finding that carries `site_col` as one of its own columns is sited from
+#' that column directly, row by row (a trial whose dataset has no single id
+#' column can still split per site by selecting the site into each finding).
+#' Rows without their own site are resolved from the snapshot(s): any table
+#' holding both `id_col` and `site_col` maps a record to a site. Pass both the
+#' `before` and `after` snapshots when comparing, so a `resolved` finding whose
+#' record was removed from `after` is still sited from `before`. Findings with
+#' no site by either route are labelled `NO_SITE` so they are never silently
+#' dropped from the split.
 #' @param findings A findings data frame.
 #' @param snapshots A list of snapshots to union (earlier snapshots take
 #'   priority when a record's site conflicts across snapshots).
 #' @param id_col Name of the record-id column shared by findings and data.
-#' @param site_col Name of the site column in the data.
+#' @param site_col Name of the site column in the findings and/or the data.
 #' @return A character vector of sites, one per finding row.
 #' @export
 resolve_finding_sites <- function(findings, snapshots, id_col, site_col) {
+  own <- if (site_col %in% names(findings)) as.character(findings[[site_col]])
+         else rep(NA_character_, nrow(findings))
   map <- character(0)
   for (snap in snapshots) {
     for (nm in names(snap)) {
@@ -294,7 +298,8 @@ resolve_finding_sites <- function(findings, snapshots, id_col, site_col) {
   }
   ids <- if (id_col %in% names(findings)) as.character(findings[[id_col]])
          else rep(NA_character_, nrow(findings))
-  site <- unname(map[ids])
+  looked_up <- unname(map[ids])
+  site <- ifelse(!is.na(own) & nzchar(own), own, looked_up)
   site[is.na(site) | !nzchar(site)] <- "NO_SITE"
   site
 }
@@ -633,9 +638,15 @@ run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
 
   # ---- one report id shared across every destination ----
   now <- utc_now()
-  id <- snapshot_id(now)
-  dvr_id <- paste0(toupper(kind), "-", id)
+  # The report is keyed by the DATA it validated: the id and directory carry
+  # the after-snapshot's id (and the document version when given). A second
+  # run on the same snapshot and version gets an explicit _N-suffixed
+  # directory (the while-loop below), never a silent overwrite. The run moment
+  # is recorded as created_utc in the manifest. An unsaved after snapshot has
+  # no id, so the run time stands in for it.
+  id <- attr(after, "id") %||% snapshot_id(now)
   ver <- if (!is.null(version)) paste0("v", sub("^[vV]", "", as.character(version))) else NULL
+  dvr_id <- paste(Filter(Negate(is.null), list(toupper(kind), ver, id)), collapse = "-")
   base <- paste(Filter(nzchar, c(trial, toupper(kind), id, ver %||% "")), collapse = "_")
 
   versions <- list(

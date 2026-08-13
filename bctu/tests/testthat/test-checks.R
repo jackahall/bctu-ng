@@ -343,3 +343,45 @@ test_that("checks_index leads every workbook, per-site included", {
   expect_equal(openxlsx::getSheetNames(site_wb)[1], "checks_index")
   expect_true(file.exists(file.path(full, "sites", "Site_A", "checks_index.csv")))
 })
+
+test_that("findings carrying their own site column are sited from it, with snapshot fallback", {
+  findings <- data.frame(record_id = c("1", "2", "3"),
+                         Site = c("Alpha", NA, "Gamma"))
+  snap <- structure(list(records = data.frame(record_id = c("1", "2", "3"),
+                                              Site = c("X", "Beta", "Z"))),
+                    class = c("bctu_snapshot", "list"))
+  sites <- resolve_finding_sites(findings, list(snap), "record_id", "Site")
+  expect_equal(sites, c("Alpha", "Beta", "Gamma"))
+
+  no_map <- structure(list(records = data.frame(other = 1)),
+                      class = c("bctu_snapshot", "list"))
+  sites2 <- resolve_finding_sites(findings, list(no_map), "record_id", "Site")
+  expect_equal(sites2, c("Alpha", "NO_SITE", "Gamma"))
+})
+
+test_that("a versioned report id carries the document version in id and directory", {
+  store   <- withr::local_tempdir()
+  out_dir <- withr::local_tempdir()
+  dvp <- function(data) list(all_records =
+    data.frame(record_id = data$records$record_id))
+  snap <- take_snapshot(datasource_example("redcap", n = 5L, seed = 1L),
+                        store = store, verbose = 0L)
+
+  res <- save_dvr(dvp, snap, paths = out_dir, version = "0.5",
+                  write_xlsx = FALSE, verbose = 0L)
+  expect_equal(basename(res$dirs[[1]]),
+               paste0("DVR-v0.5-", attr(snap, "id")))
+  man <- yaml::read_yaml(file.path(res$dirs[[1]], "manifest.yml"))
+  expect_equal(man$dvr_id, paste0("DVR-v0.5-", attr(snap, "id")))
+  expect_equal(man$version, "0.5")
+  expect_false(is.null(man$created_utc))
+
+  rerun <- save_dvr(dvp, snap, paths = out_dir, version = "0.5",
+                    write_xlsx = FALSE, verbose = 0L)
+  expect_equal(basename(rerun$dirs[[1]]),
+               paste0("DVR-v0.5-", attr(snap, "id"), "_1"))
+
+  out2 <- withr::local_tempdir()
+  res2 <- save_dvr(dvp, snap, paths = out2, write_xlsx = FALSE, verbose = 0L)
+  expect_equal(basename(res2$dirs[[1]]), paste0("DVR-", attr(snap, "id")))
+})

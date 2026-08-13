@@ -1,3 +1,18 @@
+# bctu 0.16.1
+
+## Fixes and improvements
+
+* Per-site split: a finding that carries `site_col` as one of its own columns
+  is sited from that column directly (row by row), falling back to the snapshot
+  id-to-site lookup only where it is missing. Trials whose datasets have no
+  single id column can now split per site without a snapshot-format change.
+* Report identity: the id and output directory are keyed by the data validated,
+  `<KIND>-v<version>-<after snapshot id>` (e.g. `DVR-v0.5-2026-08-13T111608Z`),
+  carrying the controlled document version when given. The run moment stays in
+  the manifest as `created_utc`. A second run on the same snapshot and version
+  gets an explicit `_N`-suffixed directory, never a silent overwrite; an
+  unsaved after snapshot falls back to the run time as its id.
+
 # bctu 0.16.0
 
 ## New features

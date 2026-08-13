@@ -2,7 +2,7 @@
 % Please edit documentation in R/checks.R
 \name{resolve_finding_sites}
 \alias{resolve_finding_sites}
-\title{Site label for each finding row, looked up from one or more snapshots}
+\title{Site label for each finding row, from the findings themselves or a snapshot}
 \usage{
 resolve_finding_sites(findings, snapshots, id_col, site_col)
 }
@@ -14,17 +14,19 @@ priority when a record's site conflicts across snapshots).}
 
 \item{id_col}{Name of the record-id column shared by findings and data.}
 
-\item{site_col}{Name of the site column in the data.}
+\item{site_col}{Name of the site column in the findings and/or the data.}
 }
 \value{
 A character vector of sites, one per finding row.
 }
 \description{
-Findings carry only what the check selected, so sites are resolved from the
-snapshot(s): any table holding both \code{id_col} and \code{site_col} maps a record to
-a site. Pass both the \code{before} and \code{after} snapshots when comparing, so a
-\code{resolved} finding whose record was removed from \code{after} is still sited from
-\code{before}. Findings whose record has no site in any snapshot (or whose frame
-has no \code{id_col}) are labelled \code{NO_SITE} so they are never silently dropped
-from the split.
+A finding that carries \code{site_col} as one of its own columns is sited from
+that column directly, row by row (a trial whose dataset has no single id
+column can still split per site by selecting the site into each finding).
+Rows without their own site are resolved from the snapshot(s): any table
+holding both \code{id_col} and \code{site_col} maps a record to a site. Pass both the
+\code{before} and \code{after} snapshots when comparing, so a \code{resolved} finding whose
+record was removed from \code{after} is still sited from \code{before}. Findings with
+no site by either route are labelled \code{NO_SITE} so they are never silently
+dropped from the split.
 }
