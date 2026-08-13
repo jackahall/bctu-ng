@@ -217,7 +217,8 @@ render_report <- function(report, output_dir,
 #' @keywords internal
 run_pandoc <- function(pandoc, md_path, out_path, fmt, template) {
   args <- c(shQuote(md_path), "--from", "markdown",
-            "-o", shQuote(out_path), "--standalone")
+            "-o", shQuote(out_path), "--standalone",
+            paste0("--resource-path=", shQuote(dirname(md_path))))
   if (fmt == "pdf")
     args <- c(args, "--pdf-engine=xelatex")
   if (fmt == "docx" && !is.null(template))
@@ -227,6 +228,9 @@ run_pandoc <- function(pandoc, md_path, out_path, fmt, template) {
   if (!is.null(code) && code != 0)
     cli::cli_abort(c("pandoc failed rendering {fmt}.",
                      "x" = paste(status, collapse = "\n")))
+  if (length(status))
+    cli::cli_warn(c("pandoc reported warnings while rendering {fmt}:",
+                    "!" = paste(status, collapse = "\n")))
   invisible(out_path)
 }
 

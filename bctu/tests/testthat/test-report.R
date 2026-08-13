@@ -72,6 +72,29 @@ test_that("render_report writes a docx bundle with a provenance manifest", {
   expect_equal(man$snapshot$id, attr(snap, "id"))
 })
 
+test_that("render_report embeds figure assets in the docx (resource path resolves)", {
+  skip_on_cran()
+  skip_if(!nzchar(Sys.which("pandoc")), "pandoc not on PATH")
+
+  fig <- file.path(withr::local_tempdir(), "figure.png")
+  grDevices::png(fig, width = 480, height = 320)
+  plot(1:3, 1:3)
+  grDevices::dev.off()
+
+  report <- bctu_report(
+    title = "EXAMPLE Figure Report",
+    sections = list(
+      intro = report_paragraph("One figure follows."),
+      fig   = report_figure(path = fig, caption = "Example figure")))
+
+  out_dir <- withr::local_tempdir()
+  res <- render_report(report, output_dir = out_dir, formats = "docx",
+                       verbose = 0L)
+
+  media <- utils::unzip(res$outputs$docx, list = TRUE)$Name
+  expect_true(any(grepl("^word/media/.*\\.png$", media)))
+})
+
 test_that("render_table_markdown escapes pipe and newline so the grid table stays structurally valid", {
   df <- data.frame(id = 1:2,
                    note = c("has|pipe", "line1\nline2"),
