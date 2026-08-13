@@ -448,8 +448,10 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   filled <- nonempty_checks(sheets)
 
-  if (isTRUE(write_readable)) write_findings_readable(sheets, dir)
-  if (!is.null(check_info)) write_checks_index(check_info, dir)
+  if (isTRUE(write_readable)) {
+    write_findings_readable(sheets, dir)
+    if (!is.null(check_info)) write_checks_index(check_info, dir)
+  }
 
   if (length(filled))
     write_findings_workbook(filled, file.path(dir, paste0(base_name, ".xlsx")),
@@ -479,8 +481,10 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
       safe_site <- gsub("[^A-Za-z0-9_-]+", "_", s)
       sdir <- file.path(dir, "sites", safe_site)
       dir.create(sdir, recursive = TRUE, showWarnings = FALSE)
-      if (isTRUE(write_readable)) write_findings_readable(per_check, sdir)
-      if (!is.null(check_info)) write_checks_index(check_info, sdir)
+      if (isTRUE(write_readable)) {
+        write_findings_readable(per_check, sdir)
+        if (!is.null(check_info)) write_checks_index(check_info, sdir)
+      }
       write_findings_workbook(per_check,
         file.path(sdir, paste0(base_name, "_", safe_site, ".xlsx")),
         index = check_info)

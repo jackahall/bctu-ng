@@ -98,3 +98,37 @@ test_that("datasource_redcap rejects a non-special_missing mapping", {
     datasource_redcap("ocean", "https://r/api/", missing_codes = list(UNK = "a")),
     "special_missing")
 })
+
+test_that("labels cover checkbox columns via the field-name export map, plus yesno and radio", {
+  skip_if_not_installed("haven")
+  records <- data.frame(
+    record_id = c("1", "2"),
+    x___1 = c(1, 0), x___2 = c(0, 1),
+    y = c(1, 0),
+    r = c(2, 3))
+  dictionary <- data.frame(
+    field_name = c("record_id", "x", "y", "r"),
+    field_type = c("text", "checkbox", "yesno", "radio"),
+    select_choices_or_calculations =
+      c("", "1, Apple | 2, Pear", "", "2, Mid | 3, High"),
+    stringsAsFactors = FALSE)
+  field_names <- data.frame(
+    original_field_name = c("record_id", "x", "x", "y", "r"),
+    choice_value = c("", "1", "2", "", ""),
+    export_field_name = c("record_id", "x___1", "x___2", "y", "r"),
+    stringsAsFactors = FALSE)
+
+  out <- redcap_apply_labels(records, dictionary, field_names)
+  expect_s3_class(out$x___1, "haven_labelled")
+  expect_s3_class(out$x___2, "haven_labelled")
+  expect_s3_class(out$y, "haven_labelled")
+  expect_s3_class(out$r, "haven_labelled")
+  expect_equal(as.character(haven::as_factor(out$x___1)), c("Yes", "No"))
+  expect_equal(as.character(haven::as_factor(out$y)), c("Yes", "No"))
+  expect_equal(as.character(haven::as_factor(out$r)), c("Mid", "High"))
+  expect_false(inherits(out$record_id, "haven_labelled"))
+
+  no_map <- redcap_apply_labels(records, dictionary)
+  expect_false(inherits(no_map$x___1, "haven_labelled"))
+  expect_s3_class(no_map$y, "haven_labelled")
+})

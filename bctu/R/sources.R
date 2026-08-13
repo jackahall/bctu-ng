@@ -97,7 +97,7 @@ datasource_redcap <- function(token_id, url, report_id = NULL, labelled = TRUE,
     dictionary  <- redcap_metadata(config$url, token)
     field_names <- redcap_field_names(config$url, token)
     if (isTRUE(config$labelled))
-      records <- redcap_apply_labels(records, dictionary)
+      records <- redcap_apply_labels(records, dictionary, field_names)
 
     attr(records, "redcap_dictionary")  <- dictionary
     attr(records, "redcap_field_names") <- field_names
@@ -233,9 +233,13 @@ redcap_read_csv <- function(csv_text, as_character = FALSE) {
 #' returned unchanged with a warning.
 #' @param records Records data frame.
 #' @param dictionary REDCap data dictionary data frame.
+#' @param field_names Optional REDCap field-name export (`exportFieldNames`)
+#'   with `original_field_name` and `export_field_name` columns; required to
+#'   label checkbox columns, whose exported names (`field___N`) differ from
+#'   their dictionary field name.
 #' @return `records` with labels applied where possible.
 #' @export
-redcap_apply_labels <- function(records, dictionary) {
+redcap_apply_labels <- function(records, dictionary, field_names = NULL) {
   if (is.null(dictionary) || !nrow(dictionary)) return(records)
   needed <- c("field_name", "field_type", "select_choices_or_calculations")
   if (!all(needed %in% names(dictionary))) return(records)
@@ -243,20 +247,41 @@ redcap_apply_labels <- function(records, dictionary) {
     cli::cli_warn("Package {.pkg haven} not installed; returning raw REDCap codes.")
     return(records)
   }
-  for (i in seq_len(nrow(dictionary))) {
-    field <- dictionary$field_name[i]
-    type  <- dictionary$field_type[i]
-    if (!field %in% names(records)) next
-    if (type %in% c("radio", "dropdown")) {
-      choices <- redcap_parse_choices(dictionary$select_choices_or_calculations[i])
-    } else if (type == "yesno") {
-      choices <- data.frame(code = c("1", "0"), label = c("Yes", "No"),
+
+  # Exported column names come from the field-name export: a checkbox field
+  # `x` with choices 1..n arrives as columns `x___1` .. `x___n`, so matching
+  # dictionary rows straight onto column names misses every checkbox. Without
+  # the export map, fall back to the identity mapping (no checkbox coverage).
+  map <- if (!is.null(field_names) &&
+             all(c("original_field_name", "export_field_name") %in% names(field_names))) {
+    field_names[, c("original_field_name", "export_field_name",
+                    intersect("choice_value", names(field_names)))]
+  } else {
+    data.frame(original_field_name = dictionary$field_name,
+               export_field_name = dictionary$field_name,
+               stringsAsFactors = FALSE)
+  }
+  dict_at <- match(map$original_field_name, dictionary$field_name)
+
+  for (j in seq_len(nrow(map))) {
+    i <- dict_at[j]
+    if (is.na(i)) next
+    col  <- map$export_field_name[j]
+    type <- dictionary$field_type[i]
+    if (!col %in% names(records)) next
+    x <- records[[col]]
+    if (is.logical(x) || inherits(x, "haven_labelled")) next
+
+    if (type %in% c("yesno", "checkbox")) {
+      choices <- data.frame(code = c("0", "1"), label = c("No", "Yes"),
                             stringsAsFactors = FALSE)
+    } else if (type %in% c("radio", "dropdown")) {
+      choices <- redcap_parse_choices(dictionary$select_choices_or_calculations[i])
     } else {
       next
     }
     if (is.null(choices) || !nrow(choices)) next
-    records[[field]] <- redcap_labelled(records[[field]], choices)
+    records[[col]] <- redcap_labelled(x, choices)
   }
   records
 }

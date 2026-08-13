@@ -349,7 +349,7 @@ test_that("checks_index leads every workbook, per-site included", {
   site_wb <- list.files(file.path(full, "sites", "Site_A"),
                         pattern = "\\.xlsx$", full.names = TRUE)[1]
   expect_equal(openxlsx::getSheetNames(site_wb)[1], "checks_index")
-  expect_true(file.exists(file.path(full, "sites", "Site_A", "checks_index.csv")))
+  expect_false(file.exists(file.path(full, "sites", "Site_A", "checks_index.csv")))
 })
 
 test_that("findings carrying their own site column are sited from it, with snapshot fallback", {
@@ -410,5 +410,5 @@ test_that("the workbook is the delivered record: no per-check CSVs by default", 
   expect_length(list.files(full, pattern = "\\.xlsx$"), 1L)
   expect_false(file.exists(file.path(full, "all_records.csv")))
   expect_false(file.exists(file.path(full, "all_records.txt")))
-  expect_true(file.exists(file.path(full, "checks_index.csv")))
+  expect_false(file.exists(file.path(full, "checks_index.csv")))
 })

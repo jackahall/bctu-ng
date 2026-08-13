@@ -1,3 +1,18 @@
+# bctu 0.16.4
+
+## Fixes
+
+* REDCap labelling now covers checkbox columns: dictionary rows are matched to
+  exported column names through the field-name export map (`exportFieldNames`),
+  so `field___N` checkbox columns (and their No/Yes coding) are labelled the
+  way the original package labelled them. Under 0.15.0 to 0.16.3 those columns
+  were silently left as plain numeric, which made label-string checks return
+  zero findings on affected trials; snapshots fetched with those versions carry
+  the defective typing and should be re-taken.
+* The standalone `checks_index.csv`/`.txt` files are no longer written by
+  default: the index lives as the first tab of every workbook. `write_readable
+  = TRUE` restores them alongside the per-check CSV/TXT copies.
+
 # bctu 0.16.3
 
 ## Changed

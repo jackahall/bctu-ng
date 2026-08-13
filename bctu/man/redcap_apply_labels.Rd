@@ -4,12 +4,17 @@
 \alias{redcap_apply_labels}
 \title{Apply REDCap value labels to coded fields (haven-style labelled vectors)}
 \usage{
-redcap_apply_labels(records, dictionary)
+redcap_apply_labels(records, dictionary, field_names = NULL)
 }
 \arguments{
 \item{records}{Records data frame.}
 
 \item{dictionary}{REDCap data dictionary data frame.}
+
+\item{field_names}{Optional REDCap field-name export (\code{exportFieldNames})
+with \code{original_field_name} and \code{export_field_name} columns; required to
+label checkbox columns, whose exported names (\code{field___N}) differ from
+their dictionary field name.}
 }
 \value{
 \code{records} with labels applied where possible.
