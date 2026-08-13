@@ -1,4 +1,8 @@
-# bctu 1.0.0.9000
+# bctu 0.15.0
+
+Ground-up rebuild of the package, continuing the version sequence from 0.14.0.
+Validated against the OCeAN weekly pipeline (snapshot, DVR, CDI, TMG report)
+on 2026-08-13.
 
 ## New features
 
