@@ -132,3 +132,11 @@ test_that("labels cover checkbox columns via the field-name export map, plus yes
   expect_false(inherits(no_map$x___1, "haven_labelled"))
   expect_s3_class(no_map$y, "haven_labelled")
 })
+
+test_that("blank CSV cells parse to NA, in typed and character columns alike", {
+  skip_if_not_installed("readr")
+  d <- redcap_read_csv("record_id,repeat_instr,weight\nA1,,\nA2,form_x,70\n")
+  expect_true(is.na(d$repeat_instr[1]))
+  expect_true(is.na(d$weight[1]))
+  expect_equal(d$repeat_instr[2], "form_x")
+})

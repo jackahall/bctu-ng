@@ -219,10 +219,11 @@ redcap_read_csv <- function(csv_text, as_character = FALSE) {
                            colClasses = "character", check.names = FALSE))
   if (requireNamespace("readr", quietly = TRUE))
     as.data.frame(readr::read_csv(I(csv_text), show_col_types = FALSE,
-                                  na = character()))
+                                  na = c("", "NA")))
   else
     utils::read.csv(text = csv_text, stringsAsFactors = FALSE,
-                    colClasses = "character", check.names = FALSE)
+                    colClasses = "character", check.names = FALSE,
+                    na.strings = c("", "NA"))
 }
 
 #' Apply REDCap value labels to coded fields (haven-style labelled vectors)

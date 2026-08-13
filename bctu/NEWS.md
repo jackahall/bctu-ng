@@ -1,3 +1,14 @@
+# bctu 0.16.5
+
+## Fixes
+
+* REDCap CSV parsing treats blank cells as `NA` again (`na = c("", "NA")`).
+  0.15.0 to 0.16.4 disabled NA strings entirely, so blanks in character
+  columns arrived as empty strings; any `is.na()`-based logic downstream (for
+  example a repeat-instrument filter) then silently matched nothing. This also
+  produced the spurious "parsing issues" warnings on typed columns. Snapshots
+  fetched with affected versions should be re-taken.
+
 # bctu 0.16.4
 
 ## Fixes
