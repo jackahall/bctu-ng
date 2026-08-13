@@ -69,10 +69,14 @@ Invisibly, a list with the report id, directories written, sheets,
 and per-check counts.
 }
 \description{
-Runs \code{dvp} on the \code{after} snapshot and writes, to every directory in \code{paths},
-an overall workbook (one worksheet per non-empty check) plus per-site
-workbooks when \code{site_col} is given, the readable CSV/TXT copies, and an
-auditable YAML manifest. When a \code{before} snapshot is supplied, each finding
+Runs \code{dvp} on the \code{after} snapshot and writes, under every directory in
+\code{paths}, the house layout \verb{<path>/<after snapshot id>/v<version>/} (a folder
+per data state, then a folder per controlled document version; without a
+\code{version}, \verb{<path>/<after snapshot id>/} directly): an overall workbook (one
+worksheet per non-empty check) plus per-site workbooks when \code{site_col} is
+given, the readable CSV/TXT copies, and an auditable YAML manifest. A rerun
+of the same snapshot and version suffixes the leaf folder \verb{_N}, never
+silently overwriting. When a \code{before} snapshot is supplied, each finding
 is labelled \code{new} / \code{unchanged} / \code{resolved} by a whole-row comparison of the
 two runs (see \code{\link[=compare_dvp]{compare_dvp()}}) and an additional \verb{update/} set of the changed
 rows (new or resolved) is written alongside the full set. The trial name is

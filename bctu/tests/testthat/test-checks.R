@@ -369,8 +369,8 @@ test_that("a versioned report id carries the document version in id and director
 
   res <- save_dvr(dvp, snap, paths = out_dir, version = "0.5",
                   write_xlsx = FALSE, verbose = 0L)
-  expect_equal(basename(res$dirs[[1]]),
-               paste0("DVR-v0.5-", attr(snap, "id")))
+  expect_equal(res$dirs[[1]],
+               file.path(out_dir, attr(snap, "id"), "v0.5"))
   man <- yaml::read_yaml(file.path(res$dirs[[1]], "manifest.yml"))
   expect_equal(man$dvr_id, paste0("DVR-v0.5-", attr(snap, "id")))
   expect_equal(man$version, "0.5")
@@ -378,10 +378,10 @@ test_that("a versioned report id carries the document version in id and director
 
   rerun <- save_dvr(dvp, snap, paths = out_dir, version = "0.5",
                     write_xlsx = FALSE, verbose = 0L)
-  expect_equal(basename(rerun$dirs[[1]]),
-               paste0("DVR-v0.5-", attr(snap, "id"), "_1"))
+  expect_equal(rerun$dirs[[1]],
+               file.path(out_dir, attr(snap, "id"), "v0.5_1"))
 
   out2 <- withr::local_tempdir()
   res2 <- save_dvr(dvp, snap, paths = out2, write_xlsx = FALSE, verbose = 0L)
-  expect_equal(basename(res2$dirs[[1]]), paste0("DVR-", attr(snap, "id")))
+  expect_equal(res2$dirs[[1]], file.path(out2, attr(snap, "id")))
 })

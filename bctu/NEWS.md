@@ -1,3 +1,13 @@
+# bctu 0.16.2
+
+## Fixes and improvements
+
+* On-disk layout restored to the house convention: each report writes to
+  `<path>/<after snapshot id>/v<version>/` (a folder per data state, then a
+  folder per controlled document version; unversioned reports write to
+  `<path>/<after snapshot id>/`). The report id string, manifest and workbook
+  names keep the full `DVR-v<version>-<snapshot id>` identity from 0.16.1.
+
 # bctu 0.16.1
 
 ## Fixes and improvements

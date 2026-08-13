@@ -494,10 +494,14 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
 # --- the report engine ------------------------------------------------------
 #' Build a Data Validation Report (DVR) from a DVP function and a snapshot
 #'
-#' Runs `dvp` on the `after` snapshot and writes, to every directory in `paths`,
-#' an overall workbook (one worksheet per non-empty check) plus per-site
-#' workbooks when `site_col` is given, the readable CSV/TXT copies, and an
-#' auditable YAML manifest. When a `before` snapshot is supplied, each finding
+#' Runs `dvp` on the `after` snapshot and writes, under every directory in
+#' `paths`, the house layout `<path>/<after snapshot id>/v<version>/` (a folder
+#' per data state, then a folder per controlled document version; without a
+#' `version`, `<path>/<after snapshot id>/` directly): an overall workbook (one
+#' worksheet per non-empty check) plus per-site workbooks when `site_col` is
+#' given, the readable CSV/TXT copies, and an auditable YAML manifest. A rerun
+#' of the same snapshot and version suffixes the leaf folder `_N`, never
+#' silently overwriting. When a `before` snapshot is supplied, each finding
 #' is labelled `new` / `unchanged` / `resolved` by a whole-row comparison of the
 #' two runs (see [compare_dvp()]) and an additional `update/` set of the changed
 #' rows (new or resolved) is written alongside the full set. The trial name is
@@ -679,11 +683,18 @@ run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
   written_dirs <- character(0)
   for (p in paths) {
     if (!dir.exists(p)) dir.create(p, recursive = TRUE, showWarnings = FALSE)
-    report_dir <- file.path(p, dvr_id)
+    # House layout: <path>/<after-snapshot-id>/v<version>/ (a folder per data
+    # state, then a folder per controlled document version); an unversioned
+    # report writes <path>/<after-snapshot-id>/ directly. A rerun of the same
+    # snapshot and version gets an explicit _N suffix on the leaf folder,
+    # never a silent overwrite.
+    base_dir <- if (!is.null(ver)) file.path(p, id) else p
+    leaf     <- ver %||% id
+    report_dir <- file.path(base_dir, leaf)
     suffix <- 0L
     while (dir.exists(report_dir)) {
       suffix <- suffix + 1L
-      report_dir <- file.path(p, paste0(dvr_id, "_", suffix))
+      report_dir <- file.path(base_dir, paste0(leaf, "_", suffix))
     }
     dir.create(report_dir, recursive = TRUE, showWarnings = FALSE)
 
