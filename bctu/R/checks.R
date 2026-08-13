@@ -346,11 +346,10 @@ write_findings_readable <- function(sheets, dir) {
 #' @export
 write_findings_workbook <- function(sheets, path, index = NULL) {
   if (!length(sheets)) return(invisible(NULL))
-  if (!requireNamespace("openxlsx", quietly = TRUE)) {
-    cli::cli_warn(c("{.pkg openxlsx} is not installed; skipping the Excel workbook.",
-                    "i" = "The CSV and TXT copies contain the same findings."))
-    return(invisible(NULL))
-  }
+  if (!requireNamespace("openxlsx", quietly = TRUE))
+    cli::cli_abort(c(
+      "The {.pkg openxlsx} package is required to write the findings workbook.",
+      "i" = "Install it with {.code install.packages(\"openxlsx\")}, then rerun."))
   wb <- openxlsx::createWorkbook()
   used <- character(0)
   if (!is.null(index)) {
@@ -419,12 +418,11 @@ nonempty_checks <- function(sheets) {
 
 #' Write one report set: an overall workbook plus (optionally) per-site output
 #'
-#' Writes the readable CSV/TXT copies and, when `write_xlsx`, an overall
-#' workbook of all findings. When `site_col` is given, each finding is assigned
-#' a site and a per-site CSV/TXT pair (plus, when `write_xlsx`, a per-site
-#' workbook) is written under `sites/`, so a centre receives only its own
-#' queries alongside the overall set; this per-site split does not require
-#' `openxlsx`. Sites are resolved from `snapshot`, and from `before_snapshot`
+#' The delivered record is one Excel workbook per set: an overall workbook of
+#' all findings (one worksheet per non-empty check), plus a per-site workbook
+#' under `sites/` for each centre when `site_col` is given, so a centre
+#' receives only its own queries alongside the overall set. Per-check CSV/TXT
+#' copies are written only when `write_readable` is `TRUE`. Sites are resolved from `snapshot`, and from `before_snapshot`
 #' too when given, so a `resolved` finding whose record was removed from
 #' `snapshot` is still sited correctly. A `cli_warn` is raised per check that
 #' has findings with no resolvable site.
@@ -434,7 +432,8 @@ nonempty_checks <- function(sheets) {
 #' @param base_name File stem for the workbooks.
 #' @param id_col,site_col Columns used to split by site; `site_col = NULL`
 #'   writes the overall workbook only.
-#' @param write_xlsx Write Excel workbooks (needs `openxlsx`)?
+#' @param write_readable Also write per-check CSV/TXT copies of the findings?
+#'   Default `FALSE`: the workbook is the delivered record.
 #' @param before_snapshot Optional earlier snapshot, unioned with `snapshot`
 #'   for site lookup (see [resolve_finding_sites()]).
 #' @param check_info Optional validated check-info table; when given, the
@@ -444,15 +443,15 @@ nonempty_checks <- function(sheets) {
 #' @export
 write_report_set <- function(sheets, snapshot, dir, base_name,
                              id_col = "record_id", site_col = NULL,
-                             write_xlsx = TRUE, before_snapshot = NULL,
+                             write_readable = FALSE, before_snapshot = NULL,
                              check_info = NULL) {
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   filled <- nonempty_checks(sheets)
 
-  write_findings_readable(sheets, dir)
+  if (isTRUE(write_readable)) write_findings_readable(sheets, dir)
   if (!is.null(check_info)) write_checks_index(check_info, dir)
 
-  if (isTRUE(write_xlsx) && length(filled))
+  if (length(filled))
     write_findings_workbook(filled, file.path(dir, paste0(base_name, ".xlsx")),
                             index = check_info)
 
@@ -480,12 +479,11 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
       safe_site <- gsub("[^A-Za-z0-9_-]+", "_", s)
       sdir <- file.path(dir, "sites", safe_site)
       dir.create(sdir, recursive = TRUE, showWarnings = FALSE)
-      write_findings_readable(per_check, sdir)
+      if (isTRUE(write_readable)) write_findings_readable(per_check, sdir)
       if (!is.null(check_info)) write_checks_index(check_info, sdir)
-      if (isTRUE(write_xlsx))
-        write_findings_workbook(per_check,
-          file.path(sdir, paste0(base_name, "_", safe_site, ".xlsx")),
-          index = check_info)
+      write_findings_workbook(per_check,
+        file.path(sdir, paste0(base_name, "_", safe_site, ".xlsx")),
+        index = check_info)
     }
   }
   invisible(dir)
@@ -537,7 +535,10 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
 #'   added after any before/after comparison, so rewording a query never makes
 #'   findings read as new or resolved. A check returning its own `query` column
 #'   is an error while check info is in use.
-#' @param write_xlsx Also write Excel workbooks if `openxlsx` is available?
+#' @param write_readable Also write per-check CSV/TXT copies of the findings?
+#'   Default `FALSE`: the delivered record is the workbook (one worksheet per
+#'   check), and `openxlsx` is required up front. The checks index and the YAML
+#'   manifest are always written.
 #' @param verbose Verbosity.
 #' @return Invisibly, a list with the report id, directories written, sheets,
 #'   and per-check counts.
@@ -550,11 +551,11 @@ write_report_set <- function(sheets, snapshot, dir, base_name,
 save_dvr <- function(dvp, after, before = NULL, paths = getwd(),
                      id_col = "record_id", site_col = NULL, version = NULL,
                      operator = NULL, check_info = NULL, query_column = TRUE,
-                     write_xlsx = TRUE, verbose = 2L) {
+                     write_readable = FALSE, verbose = 2L) {
   run_data_report(dvp, after, before, paths, kind = "dvr", id_col = id_col,
                   site_col = site_col, version = version, operator = operator,
                   check_info = check_info, query_column = query_column,
-                  write_xlsx = write_xlsx, verbose = verbose)
+                  write_readable = write_readable, verbose = verbose)
 }
 
 #' Build a Critical Data Items (CDI) report from a DVP function and a snapshot
@@ -573,11 +574,11 @@ save_dvr <- function(dvp, after, before = NULL, paths = getwd(),
 save_cdi <- function(dvp, after, paths = getwd(), id_col = "record_id",
                      site_col = NULL, version = NULL, operator = NULL,
                      check_info = NULL, query_column = TRUE,
-                     write_xlsx = TRUE, verbose = 2L) {
+                     write_readable = FALSE, verbose = 2L) {
   run_data_report(dvp, after, before = NULL, paths, kind = "cdi", id_col = id_col,
                   site_col = site_col, version = version, operator = operator,
                   check_info = check_info, query_column = query_column,
-                  write_xlsx = write_xlsx, verbose = verbose)
+                  write_readable = write_readable, verbose = verbose)
 }
 
 #' Shared engine behind [save_dvr()] and [save_cdi()]
@@ -592,8 +593,12 @@ run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
                             kind = c("dvr", "cdi"), id_col = "record_id",
                             site_col = NULL, version = NULL, operator = NULL,
                             check_info = NULL, query_column = TRUE,
-                            write_xlsx = TRUE, verbose = 2L) {
+                            write_readable = FALSE, verbose = 2L) {
   kind <- match.arg(kind)
+  if (!requireNamespace("openxlsx", quietly = TRUE))
+    cli::cli_abort(c(
+      "The {.pkg openxlsx} package is required: the {toupper(kind)} is delivered as one Excel workbook.",
+      "i" = "Install it with {.code install.packages(\"openxlsx\")}, then rerun."))
   paths <- as.character(paths)
   if (!length(paths))
     cli::cli_abort("{.arg paths} must name at least one output directory.")
@@ -699,12 +704,13 @@ run_data_report <- function(dvp, after, before = NULL, paths = getwd(),
     dir.create(report_dir, recursive = TRUE, showWarnings = FALSE)
 
     write_report_set(sheets, after, file.path(report_dir, "full"), base,
-                     id_col = id_col, site_col = site_col, write_xlsx = write_xlsx,
+                     id_col = id_col, site_col = site_col,
+                     write_readable = write_readable,
                      before_snapshot = before, check_info = info)
     if (compared)
       write_report_set(update_sheets, after, file.path(report_dir, "update"),
                        paste0(base, "_Update"), id_col = id_col,
-                       site_col = site_col, write_xlsx = write_xlsx,
+                       site_col = site_col, write_readable = write_readable,
                        before_snapshot = before, check_info = info)
     yaml::write_yaml(manifest, file.path(report_dir, manifest_filename))
     written_dirs <- c(written_dirs, report_dir)

@@ -11,7 +11,7 @@ write_report_set(
   base_name,
   id_col = "record_id",
   site_col = NULL,
-  write_xlsx = TRUE,
+  write_readable = FALSE,
   before_snapshot = NULL,
   check_info = NULL
 )
@@ -28,7 +28,8 @@ write_report_set(
 \item{id_col, site_col}{Columns used to split by site; \code{site_col = NULL}
 writes the overall workbook only.}
 
-\item{write_xlsx}{Write Excel workbooks (needs \code{openxlsx})?}
+\item{write_readable}{Also write per-check CSV/TXT copies of the findings?
+Default \code{FALSE}: the workbook is the delivered record.}
 
 \item{before_snapshot}{Optional earlier snapshot, unioned with \code{snapshot}
 for site lookup (see \code{\link[=resolve_finding_sites]{resolve_finding_sites()}}).}
@@ -41,12 +42,11 @@ per-site output, so query text always accompanies the findings.}
 Invisibly, the directory.
 }
 \description{
-Writes the readable CSV/TXT copies and, when \code{write_xlsx}, an overall
-workbook of all findings. When \code{site_col} is given, each finding is assigned
-a site and a per-site CSV/TXT pair (plus, when \code{write_xlsx}, a per-site
-workbook) is written under \verb{sites/}, so a centre receives only its own
-queries alongside the overall set; this per-site split does not require
-\code{openxlsx}. Sites are resolved from \code{snapshot}, and from \code{before_snapshot}
+The delivered record is one Excel workbook per set: an overall workbook of
+all findings (one worksheet per non-empty check), plus a per-site workbook
+under \verb{sites/} for each centre when \code{site_col} is given, so a centre
+receives only its own queries alongside the overall set. Per-check CSV/TXT
+copies are written only when \code{write_readable} is \code{TRUE}. Sites are resolved from \code{snapshot}, and from \code{before_snapshot}
 too when given, so a \code{resolved} finding whose record was removed from
 \code{snapshot} is still sited correctly. A \code{cli_warn} is raised per check that
 has findings with no resolvable site.

@@ -14,7 +14,7 @@ save_cdi(
   operator = NULL,
   check_info = NULL,
   query_column = TRUE,
-  write_xlsx = TRUE,
+  write_readable = FALSE,
   verbose = 2L
 )
 }
@@ -56,7 +56,10 @@ added after any before/after comparison, so rewording a query never makes
 findings read as new or resolved. A check returning its own \code{query} column
 is an error while check info is in use.}
 
-\item{write_xlsx}{Also write Excel workbooks if \code{openxlsx} is available?}
+\item{write_readable}{Also write per-check CSV/TXT copies of the findings?
+Default \code{FALSE}: the delivered record is the workbook (one worksheet per
+check), and \code{openxlsx} is required up front. The checks index and the YAML
+manifest are always written.}
 
 \item{verbose}{Verbosity.}
 }

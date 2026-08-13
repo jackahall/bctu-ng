@@ -1,3 +1,13 @@
+# bctu 0.16.3
+
+## Changed
+
+* The DVR/CDI delivered record is the Excel workbook, always: `openxlsx` is
+  required up front (plain-English error if missing; the silent skip-the-
+  workbook fallback is gone) and the per-check CSV/TXT copies are no longer
+  written by default. `write_readable = TRUE` (replacing `write_xlsx`) opts
+  back in; `checks_index.csv`/`.txt` and the YAML manifest are always written.
+
 # bctu 0.16.2
 
 ## Fixes and improvements
